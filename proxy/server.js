@@ -1,8 +1,10 @@
 // aihot-fansai 本地代理
 // /api/* → aihot.virxact.com/api/public/*，注入 UA + CORS + 60s 缓存
-// /api/items 额外合并 HuggingFace Daily Papers
+// /api/items 合并 HuggingFace Daily Papers + arXiv RSS（可选翻译）
 import http from 'node:http';
 import { fetchHFPapers, filterHF } from '../web/api/_hf.js';
+import { fetchArxiv, filterArxiv } from '../web/api/_arxiv.js';
+import { translateItems } from '../web/api/_translate.js';
 
 const PORT = process.env.PORT || 8787;
 const UPSTREAM = 'https://aihot.virxact.com';
@@ -46,11 +48,15 @@ http
     const isItems = subPath === 'items';
     const hasCursor = params.has('cursor');
     const categoryParam = params.get('category');
-    const shouldMergeHF = isItems && !hasCursor && (!categoryParam || categoryParam === 'paper');
+    const shouldMerge = isItems && !hasCursor && (!categoryParam || categoryParam === 'paper');
 
     try {
-      if (shouldMergeHF) {
-        const [aihot, hfAll] = await Promise.all([fetchAihot(upstreamUrl), fetchHFPapers()]);
+      if (shouldMerge) {
+        const [aihot, hfAll, arxivAll] = await Promise.all([
+          fetchAihot(upstreamUrl),
+          fetchHFPapers(),
+          fetchArxiv(),
+        ]);
         let parsed;
         try {
           parsed = JSON.parse(aihot.body);
@@ -58,25 +64,25 @@ http
           parsed = { count: 0, items: [], hasNext: false };
         }
         if (Array.isArray(parsed.items)) {
-          const hf = filterHF(hfAll, {
-            since: params.get('since'),
-            q: params.get('q'),
-            category: categoryParam,
-          });
+          const opts = { since: params.get('since'), q: params.get('q'), category: categoryParam };
+          const hf = filterHF(hfAll, opts);
+          const arxiv = filterArxiv(arxivAll, opts);
+          const extras = [...hf, ...arxiv];
           const seenUrls = new Set(parsed.items.map((i) => i.url));
-          const hfNew = hf.filter((i) => !seenUrls.has(i.url));
-          const merged = [...parsed.items, ...hfNew].sort(
+          const extrasNew = extras.filter((i) => !seenUrls.has(i.url));
+          const merged = [...parsed.items, ...extrasNew].sort(
             (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
           );
           const take = parseInt(params.get('take') || '50', 10);
           parsed.items = merged.slice(0, take);
+          parsed.items = await translateItems(parsed.items);
           parsed.count = parsed.items.length;
         }
         res.writeHead(aihot.status, {
           ...corsHeaders,
           'content-type': 'application/json; charset=utf-8',
           'x-aihot-cache': aihot.hit ? 'HIT' : 'MISS',
-          'x-hf-injected': '1',
+          'x-sources-merged': 'hf,arxiv',
         });
         return res.end(JSON.stringify(parsed));
       }
@@ -98,6 +104,6 @@ http
   })
   .listen(PORT, () => {
     console.log(`[aihot-fansai proxy] listening on http://localhost:${PORT}`);
-    console.log(`  GET /api/items?mode=selected&since=<ISO>&take=30  (含 HF Papers)`);
-    console.log(`  GET /api/daily`);
+    console.log(`  GET /api/items  (含 HF Papers + arXiv RSS)`);
+    console.log(`  ANTHROPIC_API_KEY ${process.env.ANTHROPIC_API_KEY ? '已配置 ✓' : '未配置（英文条目不翻译）'}`);
   });

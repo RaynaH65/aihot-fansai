@@ -1,6 +1,9 @@
 // Vercel Serverless Function: /api/* → aihot.virxact.com/api/public/*
-// 额外把 HuggingFace Daily Papers 注入到 /api/items 里
+// 额外合并 HuggingFace Daily Papers + arXiv RSS
+// 可选：通过 ANTHROPIC_API_KEY 翻译英文条目
 import { fetchHFPapers, filterHF } from './_hf.js';
+import { fetchArxiv, filterArxiv } from './_arxiv.js';
+import { translateItems } from './_translate.js';
 
 const UPSTREAM = 'https://aihot.virxact.com';
 const UA =
@@ -33,52 +36,49 @@ export default async function handler(req, res) {
   const upstreamUrl = `${UPSTREAM}/api/public/${subPath}${u.search}`;
   const params = u.searchParams;
 
-  // 只对 /api/items（无 cursor 翻页且未排除 paper 分类时）注入 HF
   const isItems = subPath === 'items';
   const hasCursor = params.has('cursor');
   const categoryParam = params.get('category');
-  const shouldMergeHF =
-    isItems && !hasCursor && (!categoryParam || categoryParam === 'paper');
+  const shouldMerge = isItems && !hasCursor && (!categoryParam || categoryParam === 'paper');
 
   try {
-    if (shouldMergeHF) {
-      const [aihot, hfAll] = await Promise.all([
+    if (shouldMerge) {
+      const [aihot, hfAll, arxivAll] = await Promise.all([
         fetchAihot(upstreamUrl),
         fetchHFPapers(),
+        fetchArxiv(),
       ]);
 
       let parsed;
       try {
         parsed = JSON.parse(aihot.body);
       } catch {
-        // aihot 返回不是 JSON（罕见）→ 退化到只有 HF
         parsed = { count: 0, items: [], hasNext: false };
       }
 
       if (Array.isArray(parsed.items)) {
-        const hf = filterHF(hfAll, {
-          since: params.get('since'),
-          q: params.get('q'),
-          category: categoryParam,
-        });
-        // 用 url 去重（防 aihot 也有同一条）
+        const opts = { since: params.get('since'), q: params.get('q'), category: categoryParam };
+        const hf = filterHF(hfAll, opts);
+        const arxiv = filterArxiv(arxivAll, opts);
+        const extras = [...hf, ...arxiv];
         const seenUrls = new Set(parsed.items.map((i) => i.url));
-        const hfNew = hf.filter((i) => !seenUrls.has(i.url));
-        const merged = [...parsed.items, ...hfNew].sort(
+        const extrasNew = extras.filter((i) => !seenUrls.has(i.url));
+        const merged = [...parsed.items, ...extrasNew].sort(
           (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
         );
         const take = parseInt(params.get('take') || '50', 10);
         parsed.items = merged.slice(0, take);
+        // 翻译英文条目（仅在配置了 ANTHROPIC_API_KEY 时生效）
+        parsed.items = await translateItems(parsed.items);
         parsed.count = parsed.items.length;
       }
 
       res.setHeader('content-type', 'application/json; charset=utf-8');
       res.setHeader('x-aihot-cache', aihot.hit ? 'HIT' : 'MISS');
-      res.setHeader('x-hf-injected', '1');
+      res.setHeader('x-sources-merged', 'hf,arxiv');
       return res.status(aihot.status).send(JSON.stringify(parsed));
     }
 
-    // 其他端点（/api/daily 等）直接透传
     const aihot = await fetchAihot(upstreamUrl);
     res.setHeader('content-type', 'application/json; charset=utf-8');
     res.setHeader('x-aihot-cache', aihot.hit ? 'HIT' : 'MISS');

@@ -26,7 +26,10 @@ export async function fetchHFPapers() {
           title_en: p.title,
           url: `https://huggingface.co/papers/${p.id}`,
           source: 'HuggingFace Daily Papers（社区热门论文）',
-          publishedAt: p.submittedOnDailyAt || p.publishedAt || entry.publishedAt,
+          // 用 paper.publishedAt（论文真实提交日期，有变化）而不是 submittedOnDailyAt（全是 00:00 UTC）
+          publishedAt: p.publishedAt || p.submittedOnDailyAt || entry.publishedAt,
+          // 内部排序：HF 当天精选的优先（用 submittedOnDailyAt 排序）
+          _sortAt: p.submittedOnDailyAt || p.publishedAt,
           summary: p.ai_summary || p.summary || entry.summary || '',
           category: 'paper',
           _upvotes: p.upvotes ?? 0, // 内部用：排序
@@ -39,14 +42,11 @@ export async function fetchHFPapers() {
   }
 }
 
-// 按用户请求的 since / q / category 过滤，并限制最大注入条数（按 upvotes 排序取 top）
-export function filterHF(items, { since, q, category, max = DEFAULT_MAX }) {
+// 按用户请求的 q / category 过滤，并限制最大注入条数（按 upvotes 排序取 top）
+// 注意：不应用 since 过滤——HF "今日精选" 是 aihot 的"今日"概念，但论文真实发表日期可能是几天前
+export function filterHF(items, { q, category, max = DEFAULT_MAX }) {
   let out = items;
   if (category && category !== 'paper') return []; // 显式过滤了别的分类，HF 不出现
-  if (since) {
-    const cutoff = new Date(since).getTime();
-    if (!Number.isNaN(cutoff)) out = out.filter((i) => new Date(i.publishedAt).getTime() >= cutoff);
-  }
   if (q && q.length >= 2) {
     const needle = q.toLowerCase();
     out = out.filter(
@@ -61,5 +61,5 @@ export function filterHF(items, { since, q, category, max = DEFAULT_MAX }) {
     .slice()
     .sort((a, b) => (b._upvotes ?? 0) - (a._upvotes ?? 0))
     .slice(0, cap)
-    .map(({ _upvotes, ...rest }) => rest); // 去掉内部字段
+    .map(({ _upvotes, _sortAt, ...rest }) => rest); // 去掉内部字段
 }
