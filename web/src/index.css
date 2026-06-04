@@ -1,29 +1,44 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #0a0a0a;
-  --color-ink-soft: #2d2d2d;
-  --color-mute: #6b6b6b;
-  --color-line: #e8e6e1;
-  --color-paper: #faf8f4;
+  --color-bg: #f7f9fc;
   --color-card: #ffffff;
-  --color-accent: #d4421e;
-  --color-tag-model: #f0e8d8;
-  --color-tag-product: #d9e8e0;
-  --color-tag-industry: #e8d8d8;
-  --color-tag-paper: #d8d8e8;
-  --color-tag-tip: #e8e0d0;
+  --color-ink: #0f172a;
+  --color-ink-2: #334155;
+  --color-mute: #64748b;
+  --color-mute-2: #94a3b8;
+  --color-line: #e2e8f0;
+  --color-line-2: #eef2f7;
+  --color-accent: #2563eb;
+  --color-accent-soft: #dbeafe;
+
+  --color-cat-model: #c2410c;
+  --color-cat-model-bg: #fff7ed;
+  --color-cat-product: #047857;
+  --color-cat-product-bg: #ecfdf5;
+  --color-cat-industry: #be123c;
+  --color-cat-industry-bg: #fff1f2;
+  --color-cat-paper: #4338ca;
+  --color-cat-paper-bg: #eef2ff;
+  --color-cat-tip: #a16207;
+  --color-cat-tip-bg: #fefce8;
+
   --font-sans: ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 html, body, #root {
   height: 100%;
-  background: var(--color-paper);
+  background: var(--color-bg);
   color: var(--color-ink);
   font-family: var(--font-sans);
 }
 
 * {
   -webkit-font-smoothing: antialiased;
+}
+
+/* 时间轴竖线 */
+.timeline-line {
+  background: linear-gradient(to bottom, transparent 0, var(--color-line) 8px, var(--color-line) calc(100% - 8px), transparent 100%);
 }

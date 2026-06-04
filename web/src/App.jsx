@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 
+const MODES = [
+  { key: 'selected', label: '精选', subtitle: 'AI 自动挑选的高价值内容' },
+  { key: 'all', label: '全部 AI 动态', subtitle: '过去 24 小时所有更新' },
+  { key: 'daily', label: 'AI 日报', subtitle: '按分类组织的每日速览' },
+];
+
 const CATEGORIES = [
   { key: 'all', label: '全部' },
   { key: 'ai-models', label: '模型' },
@@ -9,18 +15,12 @@ const CATEGORIES = [
   { key: 'tip', label: '技巧' },
 ];
 
-const MODES = [
-  { key: 'selected', label: '精选' },
-  { key: 'all', label: '全部 AI 动态' },
-  { key: 'daily', label: 'AI 日报' },
-];
-
 const CAT_META = {
-  'ai-models': { label: '模型', bg: 'bg-[var(--color-tag-model)]', dot: 'bg-amber-700' },
-  'ai-products': { label: '产品', bg: 'bg-[var(--color-tag-product)]', dot: 'bg-emerald-700' },
-  industry: { label: '行业', bg: 'bg-[var(--color-tag-industry)]', dot: 'bg-rose-700' },
-  paper: { label: '论文', bg: 'bg-[var(--color-tag-paper)]', dot: 'bg-indigo-700' },
-  tip: { label: '技巧', bg: 'bg-[var(--color-tag-tip)]', dot: 'bg-orange-700' },
+  'ai-models': { label: '模型', fg: 'var(--color-cat-model)', bg: 'var(--color-cat-model-bg)' },
+  'ai-products': { label: '产品', fg: 'var(--color-cat-product)', bg: 'var(--color-cat-product-bg)' },
+  industry: { label: '行业', fg: 'var(--color-cat-industry)', bg: 'var(--color-cat-industry-bg)' },
+  paper: { label: '论文', fg: 'var(--color-cat-paper)', bg: 'var(--color-cat-paper-bg)' },
+  tip: { label: '技巧', fg: 'var(--color-cat-tip)', bg: 'var(--color-cat-tip-bg)' },
 };
 
 function isoSinceDaysAgo(days) {
@@ -29,83 +29,176 @@ function isoSinceDaysAgo(days) {
   return d.toISOString().slice(0, 19) + 'Z';
 }
 
-function formatTime(iso) {
-  const t = new Date(iso);
-  const now = new Date();
-  const diffMin = Math.round((now - t) / 60000);
-  if (diffMin < 1) return '刚刚';
-  if (diffMin < 60) return `${diffMin} 分钟前`;
-  if (diffMin < 60 * 24) return `${Math.floor(diffMin / 60)} 小时前`;
-  // 北京时间显示
-  const beijing = new Date(t.getTime() + 8 * 3600 * 1000);
-  const mm = String(beijing.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(beijing.getUTCDate()).padStart(2, '0');
-  const hh = String(beijing.getUTCHours()).padStart(2, '0');
-  const mi = String(beijing.getUTCMinutes()).padStart(2, '0');
-  return `${mm}/${dd} ${hh}:${mi}`;
+function toBeijing(iso) {
+  return new Date(new Date(iso).getTime() + 8 * 3600 * 1000);
 }
 
-function Card({ item }) {
-  const meta = CAT_META[item.category] || { label: item.category, bg: 'bg-gray-100', dot: 'bg-gray-500' };
+function timeLabel(iso) {
+  const b = toBeijing(iso);
+  return `${String(b.getUTCHours()).padStart(2, '0')}:${String(b.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+function dateGroupKey(iso) {
+  const b = toBeijing(iso);
+  return `${b.getUTCFullYear()}-${String(b.getUTCMonth() + 1).padStart(2, '0')}-${String(b.getUTCDate()).padStart(2, '0')}`;
+}
+
+function dateLabel(key) {
+  const [, mm, dd] = key.split('-');
+  const today = new Date();
+  const tBJ = toBeijing(today.toISOString());
+  const todayKey = `${tBJ.getUTCFullYear()}-${String(tBJ.getUTCMonth() + 1).padStart(2, '0')}-${String(tBJ.getUTCDate()).padStart(2, '0')}`;
+  if (key === todayKey) return '今天';
+  const yest = new Date(today.getTime() - 86400000);
+  const yBJ = toBeijing(yest.toISOString());
+  const yestKey = `${yBJ.getUTCFullYear()}-${String(yBJ.getUTCMonth() + 1).padStart(2, '0')}-${String(yBJ.getUTCDate()).padStart(2, '0')}`;
+  if (key === yestKey) return '昨天';
+  return `${parseInt(mm)}月${parseInt(dd)}日`;
+}
+
+function groupByDate(items) {
+  const groups = new Map();
+  for (const it of items) {
+    const k = dateGroupKey(it.publishedAt);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(it);
+  }
+  return [...groups.entries()];
+}
+
+function CategoryPill({ category }) {
+  const meta = CAT_META[category];
+  if (!meta) return null;
   return (
-    <article className="bg-[var(--color-card)] border border-[var(--color-line)] rounded-lg p-5 hover:border-[var(--color-ink-soft)] transition-colors">
-      <div className="flex items-center gap-2 text-xs text-[var(--color-mute)] mb-2">
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded ${meta.bg} text-[var(--color-ink)]`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
-          {meta.label}
-        </span>
-        <span>·</span>
-        <span className="truncate">{item.source}</span>
-        <span>·</span>
-        <time className="tabular-nums">{formatTime(item.publishedAt)}</time>
-      </div>
-      <a
-        href={item.url}
-        target="_blank"
-        rel="noreferrer"
-        className="block text-lg font-medium leading-snug text-[var(--color-ink)] hover:text-[var(--color-accent)] mb-2"
-      >
-        {item.title}
-      </a>
-      <p className="text-sm text-[var(--color-ink-soft)] leading-relaxed line-clamp-4 whitespace-pre-line">
-        {item.summary}
-      </p>
-    </article>
+    <span
+      className="inline-flex items-center text-[11px] px-2 py-0.5 rounded font-medium"
+      style={{ color: meta.fg, backgroundColor: meta.bg }}
+    >
+      {meta.label}
+    </span>
   );
 }
 
-function DailySection({ section }) {
+function TimelineItem({ item, isFirst, isLast }) {
   return (
-    <section>
-      <h2 className="text-sm font-semibold tracking-wider text-[var(--color-mute)] uppercase mb-3">
-        {section.label}
-      </h2>
-      <div className="space-y-3">
-        {section.items.map((it, idx) => (
+    <div className="flex gap-5 relative">
+      {/* 时间 + 圆点 + 竖线 */}
+      <div className="flex-none w-16 flex flex-col items-end pt-5 relative">
+        <span className="text-xs font-mono tabular-nums text-[var(--color-mute)]">
+          {timeLabel(item.publishedAt)}
+        </span>
+      </div>
+      <div className="flex-none w-3 flex flex-col items-center relative">
+        {!isFirst && <div className="w-px h-5 bg-[var(--color-line)]" />}
+        <div className="w-2.5 h-2.5 rounded-full bg-[var(--color-card)] border-2 border-[var(--color-accent)] mt-1.5 z-10" />
+        {!isLast && <div className="w-px flex-1 bg-[var(--color-line)] mt-1.5" />}
+      </div>
+      {/* 卡片 */}
+      <div className="flex-1 min-w-0 pb-6">
+        <article className="bg-[var(--color-card)] border border-[var(--color-line)] rounded-xl px-5 py-4 hover:shadow-sm hover:border-[var(--color-line)] transition-all">
+          <div className="text-xs text-[var(--color-mute)] mb-2 truncate">
+            {item.source}
+          </div>
           <a
-            key={idx}
-            href={it.sourceUrl}
+            href={item.url}
             target="_blank"
             rel="noreferrer"
-            className="block bg-[var(--color-card)] border border-[var(--color-line)] rounded-lg p-4 hover:border-[var(--color-ink-soft)] transition-colors"
+            className="block text-[16px] font-semibold leading-snug text-[var(--color-ink)] hover:text-[var(--color-accent)] mb-2"
           >
-            <div className="text-[15px] font-medium text-[var(--color-ink)] mb-1 hover:text-[var(--color-accent)]">
-              {it.title}
-            </div>
-            <p className="text-sm text-[var(--color-ink-soft)] leading-relaxed line-clamp-3 whitespace-pre-line">
-              {it.summary}
-            </p>
-            <div className="text-xs text-[var(--color-mute)] mt-2 truncate">{it.sourceName}</div>
+            {item.title}
           </a>
-        ))}
+          <p className="text-[13.5px] text-[var(--color-ink-2)] leading-relaxed line-clamp-4 whitespace-pre-line">
+            {item.summary}
+          </p>
+          <div className="mt-3 flex items-center gap-2">
+            <CategoryPill category={item.category} />
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              className="ml-auto text-[11px] text-[var(--color-mute-2)] hover:text-[var(--color-accent)] truncate max-w-[200px]"
+            >
+              原文 ↗
+            </a>
+          </div>
+        </article>
       </div>
-    </section>
+    </div>
+  );
+}
+
+function DateDivider({ k }) {
+  return (
+    <div className="flex items-center gap-3 my-1 pl-[88px]">
+      <h3 className="text-sm font-semibold text-[var(--color-ink-2)]">{dateLabel(k)}</h3>
+      <span className="text-xs text-[var(--color-mute-2)] tabular-nums">{k}</span>
+    </div>
+  );
+}
+
+function DailyView({ data }) {
+  const labelMap = {
+    '模型发布/更新': 'ai-models',
+    '产品发布/更新': 'ai-products',
+    '行业动态': 'industry',
+    '论文研究': 'paper',
+    '技巧与观点': 'tip',
+  };
+  return (
+    <div className="space-y-10">
+      {data.sections.map((s, i) => (
+        <section key={i}>
+          <div className="flex items-baseline gap-3 mb-4 pl-1">
+            <CategoryPill category={labelMap[s.label] || 'tip'} />
+            <h2 className="text-base font-semibold text-[var(--color-ink)]">{s.label}</h2>
+            <span className="text-xs text-[var(--color-mute-2)] tabular-nums">{s.items.length} 条</span>
+          </div>
+          <div className="space-y-3">
+            {s.items.map((it, idx) => (
+              <a
+                key={idx}
+                href={it.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="block bg-[var(--color-card)] border border-[var(--color-line)] rounded-xl px-5 py-4 hover:shadow-sm hover:border-[var(--color-accent-soft)] transition-all"
+              >
+                <div className="text-[15px] font-semibold text-[var(--color-ink)] mb-1 hover:text-[var(--color-accent)]">
+                  {it.title}
+                </div>
+                <p className="text-[13.5px] text-[var(--color-ink-2)] leading-relaxed line-clamp-3 whitespace-pre-line">
+                  {it.summary}
+                </p>
+                <div className="text-xs text-[var(--color-mute)] mt-2 truncate">{it.sourceName}</div>
+              </a>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function SidebarItem({ active, label, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+        active
+          ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)] font-medium'
+          : 'text-[var(--color-ink-2)] hover:bg-[var(--color-line-2)]'
+      }`}
+    >
+      <span className={`w-1 h-4 rounded-full ${active ? 'bg-[var(--color-accent)]' : 'bg-transparent'}`} />
+      {label}
+    </button>
   );
 }
 
 export default function App() {
   const [mode, setMode] = useState('selected');
   const [category, setCategory] = useState('all');
+  const [query, setQuery] = useState('');
+  const [submittedQuery, setSubmittedQuery] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -118,8 +211,9 @@ export default function App() {
       take: '50',
     });
     if (category !== 'all') params.set('category', category);
+    if (submittedQuery && submittedQuery.length >= 2) params.set('q', submittedQuery);
     return `/api/items?${params.toString()}`;
-  }, [mode, category]);
+  }, [mode, category, submittedQuery]);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,121 +222,165 @@ export default function App() {
     setData(null);
     fetch(url)
       .then((r) => r.json())
-      .then((d) => {
-        if (cancelled) return;
-        setData(d);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(String(e));
-      })
+      .then((d) => !cancelled && setData(d))
+      .catch((e) => !cancelled && setError(String(e)))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
   }, [url]);
 
-  const todayLabel = new Date().toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    weekday: 'long',
-    timeZone: 'Asia/Shanghai',
-  });
+  const currentMode = MODES.find((m) => m.key === mode);
+  const items = data?.items || [];
+  const grouped = useMemo(() => groupByDate(items), [items]);
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b border-[var(--color-line)] bg-[var(--color-paper)]/95 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-6 py-5">
-          <div className="flex items-baseline justify-between mb-4">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">
-                aihot <span className="text-[var(--color-accent)]">·</span> FansAI
-              </h1>
-              <p className="text-xs text-[var(--color-mute)] mt-1 tabular-nums">{todayLabel} · 内部速览</p>
-            </div>
-            <a
-              href="https://aihot.virxact.com"
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs text-[var(--color-mute)] hover:text-[var(--color-ink)]"
-            >
-              数据源 ↗
-            </a>
+    <div className="min-h-screen flex">
+      {/* 左侧栏 */}
+      <aside className="w-56 flex-none border-r border-[var(--color-line)] bg-[var(--color-card)] flex flex-col">
+        <div className="px-5 py-5 border-b border-[var(--color-line-2)]">
+          <div className="text-lg font-bold tracking-tight flex items-center gap-2">
+            <span className="inline-block w-7 h-7 rounded-md bg-[var(--color-accent)] text-white text-xs grid place-items-center font-mono">AI</span>
+            <span>aihot · FansAI</span>
           </div>
-          <nav className="flex flex-wrap gap-1 text-sm">
-            {MODES.map((m) => (
-              <button
-                key={m.key}
-                onClick={() => setMode(m.key)}
-                className={`px-3 py-1.5 rounded-md transition-colors ${
-                  mode === m.key
-                    ? 'bg-[var(--color-ink)] text-[var(--color-paper)]'
-                    : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-line)]'
-                }`}
-              >
-                {m.label}
-              </button>
-            ))}
-            {mode !== 'daily' && (
-              <>
-                <span className="mx-2 text-[var(--color-line)]">|</span>
+        </div>
+        <nav className="px-3 py-4 space-y-1">
+          {MODES.map((m) => (
+            <SidebarItem
+              key={m.key}
+              active={mode === m.key}
+              label={m.label}
+              onClick={() => setMode(m.key)}
+            />
+          ))}
+          <div className="h-px bg-[var(--color-line-2)] my-3" />
+          <a
+            href="https://aihot.virxact.com"
+            target="_blank"
+            rel="noreferrer"
+            className="block w-full text-left px-3 py-2 rounded-lg text-sm text-[var(--color-mute)] hover:bg-[var(--color-line-2)]"
+          >
+            数据源 ↗
+          </a>
+          <a
+            href="https://github.com/RaynaH65/aihot-fansai"
+            target="_blank"
+            rel="noreferrer"
+            className="block w-full text-left px-3 py-2 rounded-lg text-sm text-[var(--color-mute)] hover:bg-[var(--color-line-2)]"
+          >
+            GitHub ↗
+          </a>
+        </nav>
+        <div className="mt-auto px-5 py-4 text-[11px] text-[var(--color-mute-2)] leading-relaxed border-t border-[var(--color-line-2)]">
+          内部速览 · 数据来自 aihot.virxact.com
+        </div>
+      </aside>
+
+      {/* 右侧主区 */}
+      <main className="flex-1 min-w-0">
+        <div className="max-w-4xl mx-auto px-8 py-8">
+          {/* 标题 + 副标题 */}
+          <header className="mb-6">
+            <h1 className="text-3xl font-bold tracking-tight text-[var(--color-ink)] mb-1">
+              {currentMode?.label}
+            </h1>
+            <p className="text-sm text-[var(--color-mute)]">{currentMode?.subtitle}</p>
+          </header>
+
+          {/* 过滤栏 */}
+          {mode !== 'daily' && (
+            <div className="bg-[var(--color-card)] border border-[var(--color-line)] rounded-xl px-4 py-3 mb-6 flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1">
                 {CATEGORIES.map((c) => (
                   <button
                     key={c.key}
                     onClick={() => setCategory(c.key)}
-                    className={`px-2.5 py-1.5 rounded-md text-xs transition-colors ${
+                    className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
                       category === c.key
-                        ? 'bg-[var(--color-line)] text-[var(--color-ink)]'
-                        : 'text-[var(--color-mute)] hover:text-[var(--color-ink)]'
+                        ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)] font-medium'
+                        : 'text-[var(--color-ink-2)] hover:bg-[var(--color-line-2)]'
                     }`}
                   >
                     {c.label}
                   </button>
                 ))}
-              </>
-            )}
-          </nav>
+              </div>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setSubmittedQuery(query.trim());
+                }}
+                className="ml-auto flex items-center gap-2"
+              >
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="搜索标题/摘要..."
+                  className="text-sm px-3 py-1.5 rounded-md border border-[var(--color-line)] bg-[var(--color-bg)] focus:outline-none focus:border-[var(--color-accent)] focus:bg-[var(--color-card)] transition-colors w-48"
+                />
+                <button
+                  type="submit"
+                  className="text-sm px-3 py-1.5 rounded-md bg-[var(--color-accent)] text-white hover:opacity-90"
+                >
+                  搜索
+                </button>
+                {submittedQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery('');
+                      setSubmittedQuery('');
+                    }}
+                    className="text-xs text-[var(--color-mute)] hover:text-[var(--color-ink)]"
+                  >
+                    清除
+                  </button>
+                )}
+              </form>
+            </div>
+          )}
+
+          {loading && (
+            <div className="text-center text-sm text-[var(--color-mute)] py-16">加载中…</div>
+          )}
+          {error && (
+            <div className="text-center text-sm text-rose-700 py-16">
+              出错了：{error}
+              <div className="text-xs text-[var(--color-mute)] mt-2">
+                （线上请检查 Vercel 部署，本地请检查代理 :8787）
+              </div>
+            </div>
+          )}
+
+          {!loading && !error && data && Array.isArray(data.sections) && (
+            <DailyView data={data} />
+          )}
+
+          {!loading && !error && data && Array.isArray(data.items) && (
+            <div>
+              {items.length === 0 && (
+                <div className="text-center text-sm text-[var(--color-mute)] py-16">
+                  暂无内容
+                  {submittedQuery && <span> · 关键词 "{submittedQuery}"</span>}
+                </div>
+              )}
+              {grouped.map(([k, group], gi) => (
+                <div key={k} className="mb-4">
+                  <DateDivider k={k} />
+                  {group.map((it, idx) => (
+                    <TimelineItem
+                      key={it.id}
+                      item={it}
+                      isFirst={gi === 0 && idx === 0}
+                      isLast={gi === grouped.length - 1 && idx === group.length - 1}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      </header>
-
-      <main className="flex-1 max-w-3xl w-full mx-auto px-6 py-6">
-        {loading && (
-          <div className="text-center text-sm text-[var(--color-mute)] py-12">加载中…</div>
-        )}
-        {error && (
-          <div className="text-center text-sm text-rose-700 py-12">
-            出错了：{error}
-            <div className="text-xs text-[var(--color-mute)] mt-2">
-              （检查代理是否在 :8787 运行）
-            </div>
-          </div>
-        )}
-        {!loading && !error && data && Array.isArray(data.sections) && (
-          <div className="space-y-8">
-            <div className="text-sm text-[var(--color-mute)] tabular-nums">
-              {data.date} 日报
-            </div>
-            {data.sections.map((s, i) => (
-              <DailySection key={i} section={s} />
-            ))}
-          </div>
-        )}
-        {!loading && !error && data && Array.isArray(data.items) && (
-          <div className="space-y-4">
-            {data.items.length === 0 && (
-              <div className="text-center text-sm text-[var(--color-mute)] py-12">暂无内容</div>
-            )}
-            {data.items.map((it) => (
-              <Card key={it.id} item={it} />
-            ))}
-          </div>
-        )}
       </main>
-
-      <footer className="border-t border-[var(--color-line)] py-4 text-center text-xs text-[var(--color-mute)]">
-        aihot-fansai · 数据来自 aihot.virxact.com · 仅供 FansAI 内部使用
-      </footer>
     </div>
   );
 }
