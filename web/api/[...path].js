@@ -17,20 +17,12 @@ export default async function handler(req, res) {
   for (const [k, v] of Object.entries(CORS)) res.setHeader(k, v);
   if (req.method === 'OPTIONS') return res.status(204).end();
 
-  // Vercel 把 /api/items?... 路由到这里，req.query.path = ['items']
-  // /api/daily/2026-06-04 → req.query.path = ['daily', '2026-06-04']
-  const segments = Array.isArray(req.query.path) ? req.query.path : [req.query.path].filter(Boolean);
-  const upstreamPath = '/api/public/' + segments.join('/');
-
-  // 把除 path 外的 query 拼回去
-  const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(req.query)) {
-    if (k === 'path') continue;
-    if (Array.isArray(v)) v.forEach((x) => params.append(k, x));
-    else if (v != null) params.append(k, String(v));
-  }
-  const qs = params.toString();
-  const upstreamUrl = `${UPSTREAM}${upstreamPath}${qs ? `?${qs}` : ''}`;
+  // 直接从 req.url 解析 —— 别依赖 Vercel 的 catchall query 解析（[...path] 的 key
+  // 实际是 "...path" 带三个字面点，掉过坑）
+  // req.url 形如 "/api/daily" 或 "/api/items?mode=selected&..."
+  const u = new URL(req.url, 'http://x');
+  const subPath = u.pathname.replace(/^\/api\/?/, '');
+  const upstreamUrl = `${UPSTREAM}/api/public/${subPath}${u.search}`;
 
   const cached = cache.get(upstreamUrl);
   if (cached && Date.now() - cached.ts < TTL_MS) {
