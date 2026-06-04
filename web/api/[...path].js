@@ -51,6 +51,15 @@ export default async function handler(req, res) {
     return res.status(upstreamRes.status).send(body);
   } catch (err) {
     res.setHeader('content-type', 'application/json; charset=utf-8');
-    return res.status(502).send(JSON.stringify({ error: 'upstream_failed', detail: String(err) }));
+    return res.status(502).send(
+      JSON.stringify({
+        error: 'upstream_failed',
+        url: upstreamUrl,
+        detail: String(err),
+        cause: err?.cause ? String(err.cause) : null,
+        causeCode: err?.cause?.code ?? null,
+        causeErrno: err?.cause?.errno ?? null,
+      })
+    );
   }
 }
