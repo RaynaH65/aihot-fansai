@@ -236,8 +236,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex">
-      {/* 左侧栏 */}
-      <aside className="w-56 flex-none border-r border-[var(--color-line)] bg-[var(--color-card)] flex flex-col">
+      {/* 左侧栏（sticky，滚动时保持可见） */}
+      <aside className="w-56 flex-none border-r border-[var(--color-line)] bg-[var(--color-card)] flex flex-col sticky top-0 h-screen self-start overflow-y-auto">
         <div className="px-5 py-5 border-b border-[var(--color-line-2)]">
           {/* TODO: 拿到正式 logo 后改成 <img src="/logo.svg" className="h-8" /> */}
           <div className="flex items-center gap-2.5">
