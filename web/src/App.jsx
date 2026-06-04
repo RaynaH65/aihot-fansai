@@ -239,9 +239,13 @@ export default function App() {
       {/* 左侧栏 */}
       <aside className="w-56 flex-none border-r border-[var(--color-line)] bg-[var(--color-card)] flex flex-col">
         <div className="px-5 py-5 border-b border-[var(--color-line-2)]">
-          <div className="text-lg font-bold tracking-tight flex items-center gap-2">
-            <span className="inline-block w-7 h-7 rounded-md bg-[var(--color-accent)] text-white text-xs grid place-items-center font-mono">AI</span>
-            <span>aihot · FansAI</span>
+          {/* TODO: 拿到正式 logo 后改成 <img src="/logo.svg" className="h-8" /> */}
+          <div className="flex items-center gap-2.5">
+            <span className="inline-block w-8 h-8 rounded-full bg-[var(--color-accent)] grid place-items-center font-bold text-[var(--color-bg)] text-sm">F</span>
+            <div className="leading-tight">
+              <div className="font-bold tracking-tight text-[var(--color-ink)] text-[15px]">FansAI</div>
+              <div className="text-[10px] text-[var(--color-mute)] tracking-[0.15em] uppercase mt-0.5">aihot · 内部</div>
+            </div>
           </div>
         </div>
         <nav className="px-3 py-4 space-y-1">
@@ -281,7 +285,10 @@ export default function App() {
         <div className="max-w-4xl mx-auto px-8 py-8">
           {/* 标题 + 副标题 */}
           <header className="mb-6">
-            <h1 className="text-3xl font-bold tracking-tight text-[var(--color-ink)] mb-1">
+            <h1
+              className="text-[34px] font-bold tracking-tight text-[var(--color-ink)] mb-1"
+              style={{ fontFamily: 'var(--font-serif)' }}
+            >
               {currentMode?.label}
             </h1>
             <p className="text-sm text-[var(--color-mute)]">{currentMode?.subtitle}</p>

@@ -1,29 +1,33 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #f7f9fc;
-  --color-card: #ffffff;
-  --color-ink: #0f172a;
-  --color-ink-2: #334155;
-  --color-mute: #64748b;
-  --color-mute-2: #94a3b8;
-  --color-line: #e2e8f0;
-  --color-line-2: #eef2f7;
-  --color-accent: #2563eb;
-  --color-accent-soft: #dbeafe;
+  /* 暖米色 + 草绿 · 文艺复古风 */
+  --color-bg: #faf6ee;
+  --color-card: #fffdf7;
+  --color-ink: #1c1917;
+  --color-ink-2: #44403c;
+  --color-mute: #78716c;
+  --color-mute-2: #a8a29e;
+  --color-line: #e7e0d0;
+  --color-line-2: #efe9dc;
+  --color-accent: #65a30d;
+  --color-accent-2: #4d7c0f;
+  --color-accent-soft: #ecfccb;
 
-  --color-cat-model: #c2410c;
-  --color-cat-model-bg: #fff7ed;
-  --color-cat-product: #047857;
-  --color-cat-product-bg: #ecfdf5;
-  --color-cat-industry: #be123c;
-  --color-cat-industry-bg: #fff1f2;
-  --color-cat-paper: #4338ca;
-  --color-cat-paper-bg: #eef2ff;
-  --color-cat-tip: #a16207;
-  --color-cat-tip-bg: #fefce8;
+  /* 分类 pill — 全暖色调 */
+  --color-cat-model: #b45309;     /* amber-700 模型 */
+  --color-cat-model-bg: #fef3c7;
+  --color-cat-product: #15803d;   /* green-700 产品 */
+  --color-cat-product-bg: #dcfce7;
+  --color-cat-industry: #9f1239;  /* rose-800 行业 */
+  --color-cat-industry-bg: #ffe4e6;
+  --color-cat-paper: #6b21a8;     /* purple-800 论文 */
+  --color-cat-paper-bg: #f3e8ff;
+  --color-cat-tip: #854d0e;       /* yellow-800 技巧 */
+  --color-cat-tip-bg: #fef9c3;
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-serif: ui-serif, Georgia, "Songti SC", "Noto Serif SC", serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
@@ -36,9 +40,4 @@ html, body, #root {
 
 * {
   -webkit-font-smoothing: antialiased;
-}
-
-/* 时间轴竖线 */
-.timeline-line {
-  background: linear-gradient(to bottom, transparent 0, var(--color-line) 8px, var(--color-line) calc(100% - 8px), transparent 100%);
 }
