@@ -32,9 +32,12 @@ async function ensureSchema() {
     published_at  timestamptz,
     score         integer,
     selected      boolean,
+    reason        text,
     ingested_at   timestamptz default now()
   )`;
   await sql`create index if not exists items_published_idx on items (published_at desc)`;
+  // 兼容已存在的旧表：补列（已存在则忽略）
+  await sql`alter table items add column if not exists reason text`;
   schemaReady = true;
 }
 
@@ -46,11 +49,12 @@ export async function upsertItems(items) {
   for (const it of items) {
     if (!it || !it.url) continue;
     await sql`
-      insert into items (url, title, title_en, summary, source, category, permalink, published_at, score, selected)
+      insert into items (url, title, title_en, summary, source, category, permalink, published_at, score, selected, reason)
       values (
         ${it.url}, ${it.title || null}, ${it.title_en || null}, ${it.summary || null},
         ${it.source || null}, ${it.category || null}, ${it.permalink || null},
-        ${it.publishedAt ? new Date(it.publishedAt) : null}, ${it.score ?? null}, ${it.selected ?? null}
+        ${it.publishedAt ? new Date(it.publishedAt) : null}, ${it.score ?? null}, ${it.selected ?? null},
+        ${it.reason || null}
       )
       on conflict (url) do update set
         title    = excluded.title,
@@ -58,23 +62,43 @@ export async function upsertItems(items) {
         summary  = excluded.summary,
         category = excluded.category,
         score    = excluded.score,
-        selected = excluded.selected
+        selected = excluded.selected,
+        reason   = coalesce(excluded.reason, items.reason)
     `;
     n++;
   }
   return n;
 }
 
-// 跨全部历史的关键词搜索（标题或摘要命中）。返回与前端一致的条目结构。
+// 取一批 url 已有的推荐理由（用于在实时列表里附加理由）。返回 { url: reason }
+export async function getReasons(urls) {
+  if (!sql || !Array.isArray(urls) || urls.length === 0) return {};
+  await ensureSchema();
+  const rows = await sql`select url, reason from items where url = any(${urls}) and reason is not null`;
+  const map = {};
+  for (const r of rows) map[r.url] = r.reason;
+  return map;
+}
+
+// 跨全部历史的关键词搜索（标题或摘要命中）。
+// q 支持用 "|" 分隔多个关键词做 OR（用于「重点关注」专题聚合）。
+// 返回与前端一致的条目结构。
 export async function searchItems(q, take = 100) {
   if (!sql || !q) return [];
   await ensureSchema();
-  const like = `%${q}%`;
+  // 拆成多个词做 OR；每个词转义正则元字符，再用 | 连成正则交给 Postgres ~*（大小写不敏感、子串匹配，中文可用）
+  const terms = String(q)
+    .split('|')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (terms.length === 0) return [];
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = terms.map(esc).join('|');
   const rows = await sql`
     select url, title, title_en, summary, source, category, permalink,
-           published_at, score, selected
+           published_at, score, selected, reason
     from items
-    where title ilike ${like} or summary ilike ${like}
+    where title ~* ${regex} or summary ~* ${regex}
     order by published_at desc
     limit ${take}
   `;
@@ -89,5 +113,6 @@ export async function searchItems(q, take = 100) {
     publishedAt: r.published_at ? new Date(r.published_at).toISOString() : null,
     score: r.score,
     selected: r.selected,
+    reason: r.reason || null,
   }));
 }

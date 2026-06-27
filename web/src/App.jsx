@@ -15,6 +15,19 @@ const CATEGORIES = [
   { key: 'tip', label: '技巧' },
 ];
 
+// 「重点关注」专题：FansAI 关心的 AI 原生内容方向。
+// 每个专题 = 一组关键词，后端对历史库做 OR 聚合（title/summary 命中即收）。
+const TOPICS = [
+  { key: 't-game', label: 'AI 互动影游', terms: ['互动影游', '互动剧', 'AI 游戏', 'AI游戏', '影游', 'interactive film', 'AI NPC'] },
+  { key: 't-video', label: 'AI 视频', terms: ['AI 视频', 'AI视频', '视频生成', 'text-to-video', '文生视频', 'Sora', 'Veo', 'Runway'] },
+  { key: 't-world', label: '世界模型', terms: ['世界模型', 'world model', 'world simulator', 'Genie'] },
+  { key: 't-vmodel', label: '视频模型', terms: ['视频模型', 'video model', '可灵', 'Kling', '即梦', 'Veo', 'Runway', 'Sora', '海螺'] },
+  { key: 't-music', label: 'AI 音乐', terms: ['AI 音乐', 'AI音乐', '音乐生成', 'Suno', 'Udio', '音乐模型', 'text-to-music'] },
+  { key: 't-comic', label: 'AI 漫画', terms: ['AI 漫画', 'AI漫画', '漫画生成', 'AI comic', 'webtoon'] },
+  { key: 't-drama', label: 'AI 漫剧', terms: ['漫剧', 'AI 短剧', 'AI短剧', '短剧'] },
+  { key: 't-dance', label: 'AI 舞蹈', terms: ['AI 舞蹈', 'AI舞蹈', '舞蹈生成', '动作生成', 'motion generation', 'dance'] },
+];
+
 const CAT_META = {
   'ai-models': { label: '模型', fg: 'var(--color-cat-model)', bg: 'var(--color-cat-model-bg)' },
   'ai-products': { label: '产品', fg: 'var(--color-cat-product)', bg: 'var(--color-cat-product-bg)' },
@@ -79,7 +92,7 @@ function CategoryPill({ category }) {
   );
 }
 
-function TimelineItem({ item, isFirst, isLast }) {
+function TimelineItem({ item, isFirst, isLast, onOpen }) {
   return (
     <div className="flex gap-5 relative">
       {/* 时间 + 圆点 + 竖线 */}
@@ -93,29 +106,32 @@ function TimelineItem({ item, isFirst, isLast }) {
         <div className="w-2.5 h-2.5 rounded-full bg-[var(--color-card)] border-2 border-[var(--color-accent)] mt-1.5 z-10" />
         {!isLast && <div className="w-px flex-1 bg-[var(--color-line)] mt-1.5" />}
       </div>
-      {/* 卡片 */}
+      {/* 卡片（点击打开详情） */}
       <div className="flex-1 min-w-0 pb-6">
-        <article className="bg-[var(--color-card)] border border-[var(--color-line)] rounded-xl px-5 py-4 hover:shadow-sm hover:border-[var(--color-line)] transition-all">
-          <div className="text-xs text-[var(--color-mute)] mb-2 truncate">
-            {item.source}
-          </div>
-          <a
-            href={item.url}
-            target="_blank"
-            rel="noreferrer"
-            className="block text-[16px] font-semibold leading-snug text-[var(--color-ink)] hover:text-[var(--color-accent)] mb-2"
-          >
+        <article
+          onClick={() => onOpen(item)}
+          className="cursor-pointer bg-[var(--color-card)] border border-[var(--color-line)] rounded-xl px-5 py-4 hover:shadow-sm hover:border-[var(--color-accent-soft)] transition-all"
+        >
+          <div className="text-xs text-[var(--color-mute)] mb-2 truncate">{item.source}</div>
+          <h3 className="text-[16px] font-semibold leading-snug text-[var(--color-ink)] mb-2">
             {item.title}
-          </a>
+          </h3>
           <p className="text-[13.5px] text-[var(--color-ink-2)] leading-relaxed line-clamp-4 whitespace-pre-line">
             {item.summary}
           </p>
+          {item.reason && (
+            <div className="mt-3 rounded-lg bg-[var(--color-accent-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink-2)]">
+              <span className="font-semibold text-[var(--color-accent)]">推荐理由：</span>
+              {item.reason}
+            </div>
+          )}
           <div className="mt-3 flex items-center gap-2">
             <CategoryPill category={item.category} />
             <a
               href={item.url}
               target="_blank"
               rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
               className="ml-auto text-[11px] text-[var(--color-mute-2)] hover:text-[var(--color-accent)] truncate max-w-[200px]"
             >
               原文 ↗
@@ -123,6 +139,67 @@ function TimelineItem({ item, isFirst, isLast }) {
           </div>
         </article>
       </div>
+    </div>
+  );
+}
+
+// #4 详情页（二级页面）：复用已有中文摘要 + 推荐理由，不重复翻译；底部给原文链接。
+function DetailView({ item, onBack }) {
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onBack}
+        className="mb-5 inline-flex items-center gap-1.5 text-sm text-[var(--color-mute)] hover:text-[var(--color-accent)]"
+      >
+        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        返回
+      </button>
+
+      <div className="text-xs text-[var(--color-mute)] mb-2">{item.source}</div>
+      <h1
+        className="text-[26px] font-bold leading-snug text-[var(--color-ink)] mb-2"
+        style={{ fontFamily: 'var(--font-serif)' }}
+      >
+        {item.title}
+      </h1>
+      <div className="flex items-center gap-3 text-xs text-[var(--color-mute)] mb-5">
+        <CategoryPill category={item.category} />
+        <span className="tabular-nums">
+          {dateGroupKey(item.publishedAt)} {timeLabel(item.publishedAt)}
+        </span>
+      </div>
+
+      {item.reason && (
+        <div className="rounded-xl bg-[var(--color-accent-soft)] px-4 py-3 mb-4">
+          <div className="text-xs font-semibold text-[var(--color-accent)] mb-1">推荐理由</div>
+          <p className="text-[14px] leading-relaxed text-[var(--color-ink-2)]">{item.reason}</p>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-card)] px-4 py-3 mb-5">
+        <div className="text-xs font-semibold text-[var(--color-mute)] mb-1">AI 摘要</div>
+        <p className="text-[15px] leading-[1.85] text-[var(--color-ink)] whitespace-pre-line">
+          {item.summary || '（暂无摘要）'}
+        </p>
+      </div>
+
+      {item.title_en && (
+        <div className="text-[13px] text-[var(--color-mute)] mb-5">
+          原标题：<span className="text-[var(--color-ink-2)]">{item.title_en}</span>
+        </div>
+      )}
+
+      <a
+        href={item.url}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white hover:opacity-90"
+      >
+        阅读原文 ↗
+      </a>
     </div>
   );
 }
@@ -218,6 +295,8 @@ export default function App() {
   const [error, setError] = useState(null);
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [showTop, setShowTop] = useState(false);
+  const [topic, setTopic] = useState(null); // #5 重点关注专题 key
+  const [selected, setSelected] = useState(null); // #4 详情页打开的条目
 
   const toggleDate = (k) =>
     setCollapsed((prev) => {
@@ -235,22 +314,28 @@ export default function App() {
   }, []);
 
   const url = useMemo(() => {
-    if (mode === 'daily') return '/api/daily';
-    const searching = submittedQuery && submittedQuery.length >= 2;
+    const activeTopic = TOPICS.find((t) => t.key === topic);
+    if (mode === 'daily' && !activeTopic) return '/api/daily';
+    // 专题用关键词 OR 聚合；否则用搜索框关键词
+    const q = activeTopic
+      ? activeTopic.terms.join('|')
+      : submittedQuery && submittedQuery.length >= 2
+        ? submittedQuery
+        : '';
     const params = new URLSearchParams({
       mode: mode === 'all' ? 'all' : 'selected',
-      take: searching ? '100' : '50',
+      take: q ? '100' : '50',
     });
-    // 搜索时不限时间窗口 —— 让后端查自有历史库（可跨 30 天+）；
-    // 平时只看过去 7 天。
-    if (!searching) params.set('since', isoSinceDaysAgo(7));
-    if (category !== 'all') params.set('category', category);
-    if (searching) params.set('q', submittedQuery);
+    // 有关键词（专题/搜索）时不限时间窗口 → 查自有历史库（可跨 30 天+）；平时只看过去 7 天。
+    if (!q) params.set('since', isoSinceDaysAgo(7));
+    if (!activeTopic && category !== 'all') params.set('category', category);
+    if (q) params.set('q', q);
     return `/api/items?${params.toString()}`;
-  }, [mode, category, submittedQuery]);
+  }, [mode, category, submittedQuery, topic]);
 
   useEffect(() => {
     let cancelled = false;
+    setSelected(null); // 切换导航/搜索时关闭详情页
     setLoading(true);
     setError(null);
     setData(null);
@@ -265,6 +350,11 @@ export default function App() {
   }, [url]);
 
   const currentMode = MODES.find((m) => m.key === mode);
+  const activeTopic = TOPICS.find((t) => t.key === topic);
+  const headerLabel = activeTopic ? activeTopic.label : currentMode?.label;
+  const headerSub = activeTopic
+    ? `重点关注 · 跨全部历史聚合「${activeTopic.label}」相关动态`
+    : currentMode?.subtitle;
   const items = data?.items || [];
   const grouped = useMemo(() => groupByDate(items), [items]);
 
@@ -297,11 +387,35 @@ export default function App() {
           {MODES.map((m) => (
             <SidebarItem
               key={m.key}
-              active={mode === m.key}
+              active={mode === m.key && !topic}
               label={m.label}
-              onClick={() => setMode(m.key)}
+              onClick={() => {
+                setMode(m.key);
+                setTopic(null);
+              }}
             />
           ))}
+
+          {/* #5 重点关注专题 */}
+          <div className="px-3 pt-4 pb-1 text-[11px] font-semibold text-[var(--color-mute)] tracking-wide">
+            重点关注
+          </div>
+          {TOPICS.map((t) => (
+            <SidebarItem
+              key={t.key}
+              active={topic === t.key}
+              label={t.label}
+              onClick={() => {
+                setTopic(t.key);
+                setCategory('all');
+                setQuery('');
+                setSubmittedQuery('');
+                if (mode === 'daily') setMode('all');
+                window.scrollTo({ top: 0 });
+              }}
+            />
+          ))}
+
           <div className="h-px bg-[var(--color-line-2)] my-3" />
           <a
             href="https://github.com/RaynaH65/aihot-fansai"
@@ -320,25 +434,32 @@ export default function App() {
       {/* 右侧主区 */}
       <main className="flex-1 min-w-0">
         <div className="max-w-4xl mx-auto px-8 py-8">
+          {selected ? (
+            <DetailView item={selected} onBack={() => setSelected(null)} />
+          ) : (
+          <>
           {/* 标题 + 副标题 */}
           <header className="mb-6">
             <h1
               className="text-[34px] font-bold tracking-tight text-[var(--color-ink)] mb-1"
               style={{ fontFamily: 'var(--font-serif)' }}
             >
-              {currentMode?.label}
+              {headerLabel}
             </h1>
-            <p className="text-sm text-[var(--color-mute)]">{currentMode?.subtitle}</p>
+            <p className="text-sm text-[var(--color-mute)]">{headerSub}</p>
           </header>
 
-          {/* 过滤栏 */}
-          {mode !== 'daily' && (
+          {/* 过滤栏（专题模式下隐藏分类） */}
+          {mode !== 'daily' && !activeTopic && (
             <div className="bg-[var(--color-card)] border border-[var(--color-line)] rounded-xl px-4 py-3 mb-6 flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-1">
                 {CATEGORIES.map((c) => (
                   <button
                     key={c.key}
-                    onClick={() => setCategory(c.key)}
+                    onClick={() => {
+                      setCategory(c.key);
+                      setTopic(null);
+                    }}
                     className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
                       category === c.key
                         ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)] font-medium'
@@ -352,6 +473,7 @@ export default function App() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
+                  setTopic(null);
                   setSubmittedQuery(query.trim());
                 }}
                 className="ml-auto flex items-center gap-2"
@@ -405,7 +527,8 @@ export default function App() {
               {items.length === 0 && (
                 <div className="text-center text-sm text-[var(--color-mute)] py-16">
                   暂无内容
-                  {submittedQuery && <span> · 关键词 "{submittedQuery}"</span>}
+                  {activeTopic && <span> · 专题「{activeTopic.label}」（历史库攒够后会更多）</span>}
+                  {!activeTopic && submittedQuery && <span> · 关键词 "{submittedQuery}"</span>}
                 </div>
               )}
               {grouped.map(([k, group], gi) => {
@@ -425,12 +548,15 @@ export default function App() {
                           item={it}
                           isFirst={gi === 0 && idx === 0}
                           isLast={gi === grouped.length - 1 && idx === group.length - 1}
+                          onOpen={setSelected}
                         />
                       ))}
                   </div>
                 );
               })}
             </div>
+          )}
+          </>
           )}
         </div>
       </main>

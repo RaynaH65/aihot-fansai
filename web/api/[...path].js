@@ -3,7 +3,7 @@
 // - 可选：通过 ANTHROPIC_API_KEY 翻译英文条目
 // - 可选：配了 DATABASE_URL 时，把抓到的条目囤进 Neon，并让搜索跨全部历史
 import { buildMergedItems } from './_feed.js';
-import { dbEnabled, upsertItems, searchItems } from './_db.js';
+import { dbEnabled, upsertItems, searchItems, getReasons } from './_db.js';
 
 const UPSTREAM = 'https://aihot.virxact.com';
 const UA =
@@ -60,6 +60,17 @@ export default async function handler(req, res) {
     // 2) 默认动态：实时合并 aihot + HF + arXiv，并顺手囤进数据库。
     if (shouldMerge) {
       const { status, parsed, items } = await buildMergedItems(params);
+
+      // 附加已生成的推荐理由（来自 Neon；新条目要等囤货生成后才有）
+      if (dbEnabled()) {
+        try {
+          const reasons = await getReasons(items.map((i) => i.url));
+          for (const it of items) if (reasons[it.url]) it.reason = reasons[it.url];
+        } catch {
+          /* 理由附加失败不影响主流程 */
+        }
+      }
+
       parsed.items = items;
       parsed.count = items.length;
 

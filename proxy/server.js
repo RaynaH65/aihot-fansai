@@ -4,7 +4,7 @@
 // 配了 DATABASE_URL 时：顺手囤进 Neon，搜索查自有历史库（与线上行为一致）
 import http from 'node:http';
 import { buildMergedItems } from '../web/api/_feed.js';
-import { dbEnabled, upsertItems, searchItems } from '../web/api/_db.js';
+import { dbEnabled, upsertItems, searchItems, getReasons } from '../web/api/_db.js';
 
 const PORT = process.env.PORT || 8787;
 const UPSTREAM = 'https://aihot.virxact.com';
@@ -69,6 +69,14 @@ http
       // 2) 实时合并 + 顺手囤货
       if (shouldMerge) {
         const { status, parsed, items } = await buildMergedItems(params);
+        if (dbEnabled()) {
+          try {
+            const reasons = await getReasons(items.map((i) => i.url));
+            for (const it of items) if (reasons[it.url]) it.reason = reasons[it.url];
+          } catch {
+            /* ignore */
+          }
+        }
         parsed.items = items;
         parsed.count = items.length;
         if (dbEnabled()) upsertItems(items).catch(() => {});
