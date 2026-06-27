@@ -93,7 +93,11 @@ export async function searchItems(q, take = 100) {
     .filter(Boolean);
   if (terms.length === 0) return [];
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = terms.map(esc).join('|');
+  // 英文/ASCII 词加整词边界（\m..\M），避免 "Udio" 命中 "Studio"；中文按子串匹配。
+  const isAscii = (s) => /^[\x00-\x7f]+$/.test(s);
+  const regex = terms
+    .map((t) => (isAscii(t) ? `\\m${esc(t)}\\M` : esc(t)))
+    .join('|');
   const rows = await sql`
     select url, title, title_en, summary, source, category, permalink,
            published_at, score, selected, reason
