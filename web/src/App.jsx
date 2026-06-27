@@ -273,13 +273,24 @@ export default function App() {
       {/* 左侧栏（sticky，滚动时保持可见） */}
       <aside className="w-56 flex-none border-r border-[var(--color-line)] bg-[var(--color-card)] flex flex-col sticky top-0 h-screen self-start overflow-y-auto">
         <div className="px-5 py-5 border-b border-[var(--color-line-2)]">
-          {/* TODO: 拿到正式 logo 后改成 <img src="/logo.svg" className="h-8" /> */}
+          {/* logo 来自 web/public/logo.svg —— 用真正的 FansAI logo 覆盖该文件即可 */}
           <div className="flex items-center gap-2.5">
-            <span className="inline-block w-8 h-8 rounded-full bg-[var(--color-accent)] grid place-items-center font-bold text-[var(--color-bg)] text-sm">F</span>
-            <div className="leading-tight">
-              <div className="font-bold tracking-tight text-[var(--color-ink)] text-[15px]">FansAI</div>
-              <div className="text-[10px] text-[var(--color-mute)] tracking-[0.15em] uppercase mt-0.5">aihot · 内部</div>
-            </div>
+            <img
+              src="/logo.svg"
+              alt="FansAI"
+              className="h-7 w-auto"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                e.currentTarget.nextElementSibling.style.display = 'block';
+              }}
+            />
+            <span
+              style={{ display: 'none' }}
+              className="font-bold tracking-tight text-[var(--color-ink)] text-[17px]"
+            >
+              FansAI
+            </span>
+            <span className="text-[10px] text-[var(--color-mute)] tracking-[0.15em] uppercase">内部</span>
           </div>
         </div>
         <nav className="px-3 py-4 space-y-1">
@@ -293,14 +304,6 @@ export default function App() {
           ))}
           <div className="h-px bg-[var(--color-line-2)] my-3" />
           <a
-            href="https://aihot.virxact.com"
-            target="_blank"
-            rel="noreferrer"
-            className="block w-full text-left px-3 py-2 rounded-lg text-sm text-[var(--color-mute)] hover:bg-[var(--color-line-2)]"
-          >
-            数据源 ↗
-          </a>
-          <a
             href="https://github.com/RaynaH65/aihot-fansai"
             target="_blank"
             rel="noreferrer"
@@ -310,7 +313,7 @@ export default function App() {
           </a>
         </nav>
         <div className="mt-auto px-5 py-4 text-[11px] text-[var(--color-mute-2)] leading-relaxed border-t border-[var(--color-line-2)]">
-          内部速览 · 数据来自 aihot.virxact.com
+          FansAI 内部速览
         </div>
       </aside>
 
