@@ -32,6 +32,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       dbVar: dbVar(),
+      hasMinimaxKey: !!process.env.MINIMAX_API_KEY, // 诊断：函数能否读到 key（不暴露 key 本身）
       fetched: items.length,
       upserted,
       reasonsGenerated: Object.keys(generated).length,
