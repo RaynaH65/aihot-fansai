@@ -1,9 +1,9 @@
 // Vercel Serverless Function: /api/* → aihot.virxact.com/api/public/*
-// 额外合并 HuggingFace Daily Papers + arXiv RSS
-// 可选：通过 ANTHROPIC_API_KEY 翻译英文条目
-import { fetchHFPapers, filterHF } from './_hf.js';
-import { fetchArxiv, filterArxiv } from './_arxiv.js';
-import { translateItems } from './_translate.js';
+// - 合并 HuggingFace Daily Papers + arXiv RSS（见 _feed.js）
+// - 可选：通过 ANTHROPIC_API_KEY 翻译英文条目
+// - 可选：配了 DATABASE_URL 时，把抓到的条目囤进 Neon，并让搜索跨全部历史
+import { buildMergedItems } from './_feed.js';
+import { dbEnabled, upsertItems, searchItems } from './_db.js';
 
 const UPSTREAM = 'https://aihot.virxact.com';
 const UA =
@@ -39,46 +39,40 @@ export default async function handler(req, res) {
   const isItems = subPath === 'items';
   const hasCursor = params.has('cursor');
   const categoryParam = params.get('category');
+  const q = (params.get('q') || '').trim();
   const shouldMerge = isItems && !hasCursor && (!categoryParam || categoryParam === 'paper');
 
   try {
-    if (shouldMerge) {
-      const [aihot, hfAll, arxivAll] = await Promise.all([
-        fetchAihot(upstreamUrl),
-        fetchHFPapers(),
-        fetchArxiv(),
-      ]);
-
-      let parsed;
-      try {
-        parsed = JSON.parse(aihot.body);
-      } catch {
-        parsed = { count: 0, items: [], hasNext: false };
+    // 1) 搜索：配了数据库就查自有历史库（可跨 30 天+），命中即返回。
+    if (isItems && q.length >= 2 && dbEnabled()) {
+      const take = parseInt(params.get('take') || '100', 10);
+      const rows = await searchItems(q, take);
+      if (rows.length > 0) {
+        res.setHeader('content-type', 'application/json; charset=utf-8');
+        res.setHeader('x-source', 'neon-history');
+        return res
+          .status(200)
+          .send(JSON.stringify({ count: rows.length, items: rows, hasNext: false }));
       }
-
-      if (Array.isArray(parsed.items)) {
-        const opts = { since: params.get('since'), q: params.get('q'), category: categoryParam };
-        const hf = filterHF(hfAll, opts);
-        const arxiv = filterArxiv(arxivAll, opts);
-        const extras = [...hf, ...arxiv];
-        const seenUrls = new Set(parsed.items.map((i) => i.url));
-        const extrasNew = extras.filter((i) => !seenUrls.has(i.url));
-        const merged = [...parsed.items, ...extrasNew].sort(
-          (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
-        );
-        const take = parseInt(params.get('take') || '50', 10);
-        parsed.items = merged.slice(0, take);
-        // 翻译英文条目（仅在配置了 ANTHROPIC_API_KEY 时生效）
-        parsed.items = await translateItems(parsed.items);
-        parsed.count = parsed.items.length;
-      }
-
-      res.setHeader('content-type', 'application/json; charset=utf-8');
-      res.setHeader('x-aihot-cache', aihot.hit ? 'HIT' : 'MISS');
-      res.setHeader('x-sources-merged', 'hf,arxiv');
-      return res.status(aihot.status).send(JSON.stringify(parsed));
+      // 库里暂时没有 → 落到下面的实时合并（冷启动友好）
     }
 
+    // 2) 默认动态：实时合并 aihot + HF + arXiv，并顺手囤进数据库。
+    if (shouldMerge) {
+      const { status, parsed, items } = await buildMergedItems(params);
+      parsed.items = items;
+      parsed.count = items.length;
+
+      // 顺手囤货（fire-and-forget，不阻塞响应、不影响失败时返回）
+      if (dbEnabled()) upsertItems(items).catch(() => {});
+
+      res.setHeader('content-type', 'application/json; charset=utf-8');
+      res.setHeader('x-sources-merged', 'hf,arxiv');
+      res.setHeader('x-db', dbEnabled() ? 'on' : 'off');
+      return res.status(status).send(JSON.stringify(parsed));
+    }
+
+    // 3) 其它路径（/api/daily、翻页 cursor 等）：原样透传，带 60s 缓存。
     const aihot = await fetchAihot(upstreamUrl);
     res.setHeader('content-type', 'application/json; charset=utf-8');
     res.setHeader('x-aihot-cache', aihot.hit ? 'HIT' : 'MISS');

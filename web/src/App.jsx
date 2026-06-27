@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 const MODES = [
   { key: 'selected', label: '精选', subtitle: 'AI 自动挑选的高价值内容' },
-  { key: 'all', label: '全部 AI 动态', subtitle: '过去 24 小时所有更新' },
+  { key: 'all', label: '全部 AI 动态', subtitle: '过去 7 天所有更新' },
   { key: 'daily', label: 'AI 日报', subtitle: '按分类组织的每日速览' },
 ];
 
@@ -205,13 +205,16 @@ export default function App() {
 
   const url = useMemo(() => {
     if (mode === 'daily') return '/api/daily';
+    const searching = submittedQuery && submittedQuery.length >= 2;
     const params = new URLSearchParams({
       mode: mode === 'all' ? 'all' : 'selected',
-      since: isoSinceDaysAgo(1),
-      take: '50',
+      take: searching ? '100' : '50',
     });
+    // 搜索时不限时间窗口 —— 让后端查自有历史库（可跨 30 天+）；
+    // 平时只看过去 7 天。
+    if (!searching) params.set('since', isoSinceDaysAgo(7));
     if (category !== 'all') params.set('category', category);
-    if (submittedQuery && submittedQuery.length >= 2) params.set('q', submittedQuery);
+    if (searching) params.set('q', submittedQuery);
     return `/api/items?${params.toString()}`;
   }, [mode, category, submittedQuery]);
 
