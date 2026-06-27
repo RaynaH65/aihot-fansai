@@ -2,10 +2,21 @@
 // 没配 DATABASE_URL 时全部退化为 no-op，站点行为跟以前完全一样。
 import { neon } from '@neondatabase/serverless';
 
-const URL = process.env.DATABASE_URL || '';
+// Vercel 的 Neon / Postgres 集成可能用不同的变量名注入连接串，挨个认一遍。
+const CANDIDATES = [
+  'DATABASE_URL',
+  'POSTGRES_URL',
+  'POSTGRES_PRISMA_URL',
+  'DATABASE_URL_UNPOOLED',
+  'POSTGRES_URL_NON_POOLING',
+  'NEON_DATABASE_URL',
+];
+const VAR = CANDIDATES.find((k) => process.env[k]);
+const URL = (VAR && process.env[VAR]) || '';
 const sql = URL ? neon(URL) : null;
 
 export const dbEnabled = () => !!sql;
+export const dbVar = () => VAR || null; // 调试用：实际命中的变量名
 
 let schemaReady = false;
 async function ensureSchema() {
