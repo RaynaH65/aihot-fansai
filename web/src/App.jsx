@@ -127,12 +127,26 @@ function TimelineItem({ item, isFirst, isLast }) {
   );
 }
 
-function DateDivider({ k }) {
+function DateDivider({ k, count, collapsed, onToggle }) {
   return (
-    <div className="flex items-center gap-3 my-1 pl-[88px]">
+    <button
+      type="button"
+      onClick={onToggle}
+      className="w-full flex items-center gap-3 my-1 pl-[88px] py-1 select-none cursor-pointer rounded hover:bg-[var(--color-line-2)]/60 transition-colors"
+    >
+      <svg
+        className={`w-4 h-4 flex-none text-[var(--color-mute-2)] transition-transform ${collapsed ? '-rotate-90' : ''}`}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+      >
+        <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
       <h3 className="text-sm font-semibold text-[var(--color-ink-2)]">{dateLabel(k)}</h3>
       <span className="text-xs text-[var(--color-mute-2)] tabular-nums">{k}</span>
-    </div>
+      <span className="text-xs text-[var(--color-mute-2)]">· {count} 条</span>
+    </button>
   );
 }
 
@@ -202,6 +216,23 @@ export default function App() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const [showTop, setShowTop] = useState(false);
+
+  const toggleDate = (k) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(k) ? next.delete(k) : next.add(k);
+      return next;
+    });
+
+  // 下滑超过一屏时显示「返回顶部」（页面是 window 级滚动）
+  useEffect(() => {
+    const onScroll = () => setShowTop(window.scrollY > 400);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const url = useMemo(() => {
     if (mode === 'daily') return '/api/daily';
@@ -374,23 +405,46 @@ export default function App() {
                   {submittedQuery && <span> · 关键词 "{submittedQuery}"</span>}
                 </div>
               )}
-              {grouped.map(([k, group], gi) => (
-                <div key={k} className="mb-4">
-                  <DateDivider k={k} />
-                  {group.map((it, idx) => (
-                    <TimelineItem
-                      key={it.id}
-                      item={it}
-                      isFirst={gi === 0 && idx === 0}
-                      isLast={gi === grouped.length - 1 && idx === group.length - 1}
+              {grouped.map(([k, group], gi) => {
+                const isCollapsed = collapsed.has(k);
+                return (
+                  <div key={k} className="mb-4">
+                    <DateDivider
+                      k={k}
+                      count={group.length}
+                      collapsed={isCollapsed}
+                      onToggle={() => toggleDate(k)}
                     />
-                  ))}
-                </div>
-              ))}
+                    {!isCollapsed &&
+                      group.map((it, idx) => (
+                        <TimelineItem
+                          key={it.id}
+                          item={it}
+                          isFirst={gi === 0 && idx === 0}
+                          isLast={gi === grouped.length - 1 && idx === group.length - 1}
+                        />
+                      ))}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
       </main>
+
+      {showTop && (
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          aria-label="返回顶部"
+          title="返回顶部"
+          className="fixed bottom-6 right-6 z-50 w-11 h-11 rounded-full bg-[var(--color-card)] border border-[var(--color-line)] shadow-md grid place-items-center text-[var(--color-ink-2)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent-soft)] transition-all"
+        >
+          <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 19V5M5 12l7-7 7 7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
