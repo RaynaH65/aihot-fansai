@@ -1,21 +1,21 @@
-// 推荐理由生成（可选）：用 Claude 为每条资讯写一句 FansAI 视角的「推荐理由」。
-// 公开 API 不提供推荐理由，这里自己生成。需要 ANTHROPIC_API_KEY；缺失时返回空，不报错。
+// 推荐理由生成（可选）：用 MiniMax 为每条资讯写一句 FansAI 视角的「推荐理由」。
+// 公开 API 不提供推荐理由，这里自己生成。需要环境变量 MINIMAX_API_KEY；缺失时返回空，不报错。
 // 只为「还没有理由」的条目生成，避免重复花钱。
-const API_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-haiku-4-5';
+const API_URL = 'https://api.minimaxi.chat/v1/text/chatcompletion_v2';
+const MODEL = 'MiniMax-Text-01';
 
 function hasKey() {
-  return !!process.env.ANTHROPIC_API_KEY;
+  return !!process.env.MINIMAX_API_KEY;
 }
 
 // items: [{url,title,summary,category,source}]，返回 { url: reason }
 export async function generateReasons(items) {
   if (!hasKey() || !Array.isArray(items) || items.length === 0) return {};
 
-  // 一次最多处理 25 条，过多就分批
   const out = {};
-  for (let start = 0; start < items.length; start += 25) {
-    const batch = items.slice(start, start + 25);
+  // 一次最多处理 20 条，过多就分批
+  for (let start = 0; start < items.length; start += 20) {
+    const batch = items.slice(start, start + 20);
     const payload = batch.map((it, i) => ({
       idx: i,
       title: it.title,
@@ -37,18 +37,21 @@ ${JSON.stringify(payload, null, 2)}
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'x-api-key': process.env.ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
+          Authorization: `Bearer ${process.env.MINIMAX_API_KEY}`,
         },
         body: JSON.stringify({
           model: MODEL,
-          max_tokens: 2000,
+          max_tokens: 4000,
           messages: [{ role: 'user', content: prompt }],
         }),
       });
       if (!res.ok) continue;
       const data = await res.json();
-      const text = data?.content?.[0]?.text || '';
+      if (data?.base_resp && data.base_resp.status_code !== 0) {
+        console.error('[reason] minimax error:', data.base_resp.status_msg);
+        continue;
+      }
+      const text = data?.choices?.[0]?.message?.content || '';
       const jsonText = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
       const parsed = JSON.parse(jsonText);
       for (const entry of parsed) {
