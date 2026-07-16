@@ -32,6 +32,7 @@ export async function fetchHFPapers() {
           _sortAt: p.submittedOnDailyAt || p.publishedAt,
           summary: p.ai_summary || p.summary || entry.summary || '',
           category: 'paper',
+          image: entry.thumbnail || null, // HF 自带论文社交缩略图，直接用作配图
           _upvotes: p.upvotes ?? 0, // 内部用：排序
         };
       });

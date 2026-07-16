@@ -1,8 +1,11 @@
-// Vercel Cron 定时囤货：拉一遍当前全量动态写入 Neon。
+// Vercel Cron 定时囤货：拉一遍当前全量动态写入 Neon，并补齐富化数据
+// （中文翻译 MiniMax / 推荐理由 / 亮点 / 配图）。
 // 由 vercel.json 的 crons 触发；也可手动访问 /api/cron/ingest 立即跑一次。
 import { buildMergedItems } from '../_feed.js';
-import { upsertItems, dbEnabled, dbVar, getReasons } from '../_db.js';
-import { generateReasons } from '../_reason.js';
+import { dbEnabled, dbVar, getBackfillItems } from '../_db.js';
+import { applyStoredEnrichment, enrichMissingAndPersist } from '../_enrich.js';
+
+export const config = { maxDuration: 300 };
 
 export default async function handler(req, res) {
   // 若设了 CRON_SECRET，则校验（Vercel Cron 会自动带 Authorization: Bearer <secret>）。
@@ -20,22 +23,32 @@ export default async function handler(req, res) {
     const params = new URLSearchParams({ mode: 'all', take: '100' });
     const { items } = await buildMergedItems(params);
 
-    // 为「还没有推荐理由」的条目生成理由（有 ANTHROPIC_API_KEY 才会真生成）
-    const existing = await getReasons(items.map((i) => i.url));
-    const need = items.filter((i) => !existing[i.url]);
-    const generated = await generateReasons(need);
-    for (const it of items) {
-      it.reason = generated[it.url] || existing[it.url] || null;
+    const { enrichMap } = await applyStoredEnrichment(items);
+    const stats = await enrichMissingAndPersist(items, enrichMap); // 全量补齐（含 upsert）
+
+    // 历史库存量回填：每轮补最多 40 条旧数据的翻译/理由/亮点/配图，几天内逐步清完积压
+    let backfill = null;
+    try {
+      const olds = await getBackfillItems(40);
+      const inCurrent = new Set(items.map((i) => i.url));
+      const targets = olds.filter((o) => !inCurrent.has(o.url));
+      if (targets.length) {
+        const bMap = {};
+        for (const o of targets) bMap[o.url] = o._enrich;
+        backfill = await enrichMissingAndPersist(targets, bMap);
+        backfill.scanned = targets.length;
+      }
+    } catch (e) {
+      backfill = { error: String(e?.message || e) };
     }
 
-    const upserted = await upsertItems(items);
     return res.status(200).json({
       ok: true,
       dbVar: dbVar(),
       hasMinimaxKey: !!process.env.MINIMAX_API_KEY, // 诊断：函数能否读到 key（不暴露 key 本身）
       fetched: items.length,
-      upserted,
-      reasonsGenerated: Object.keys(generated).length,
+      ...stats,
+      backfill,
     });
   } catch (err) {
     return res.status(500).json({ ok: false, error: String(err) });

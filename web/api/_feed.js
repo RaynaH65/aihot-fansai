@@ -1,8 +1,8 @@
-// 共享取数层：aihot 公开 API + HuggingFace Papers + arXiv RSS 合并、排序、可选翻译。
+// 共享取数层：aihot 公开 API + HuggingFace Papers + arXiv RSS 合并、排序。
+// 翻译/理由/亮点/配图等富化不在这里做 —— 见 _enrich.js（请求路径查库应用，cron 补齐）。
 // 被 api/[...path].js（线上）、api/cron/ingest.js（定时囤货）、proxy/server.js（本地）复用。
 import { fetchHFPapers, filterHF } from './_hf.js';
 import { fetchArxiv, filterArxiv } from './_arxiv.js';
-import { translateItems } from './_translate.js';
 
 const UPSTREAM = 'https://aihot.virxact.com';
 const UA =
@@ -23,7 +23,7 @@ export async function fetchAihotItems(params) {
 }
 
 // params: URLSearchParams（保留 mode/since/category/take/q 原样透传给上游）
-// 返回 { status, parsed, items } —— items 为合并+排序+翻译后的结果
+// 返回 { status, parsed, items } —— items 为合并+排序后的原始结果（未富化）
 export async function buildMergedItems(params) {
   const [{ status, parsed }, hfAll, arxivAll] = await Promise.all([
     fetchAihotItems(params),
@@ -39,6 +39,5 @@ export async function buildMergedItems(params) {
     (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
   );
   const take = parseInt(params.get('take') || '50', 10);
-  const items = await translateItems(merged.slice(0, take));
-  return { status, parsed, items };
+  return { status, parsed, items: merged.slice(0, take) };
 }

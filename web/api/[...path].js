@@ -1,9 +1,12 @@
 // Vercel Serverless Function: /api/* → aihot.virxact.com/api/public/*
 // - 合并 HuggingFace Daily Papers + arXiv RSS（见 _feed.js）
-// - 可选：通过 ANTHROPIC_API_KEY 翻译英文条目
-// - 可选：配了 DATABASE_URL 时，把抓到的条目囤进 Neon，并让搜索跨全部历史
+// - 富化：翻译(MiniMax)/推荐理由/亮点/配图 —— 请求路径只查库应用（零 LLM 时延），
+//   缺的在响应后台补齐（waitUntil），下一次访问就有
+// - /api/social：重点关注专题的社媒声量（Apify 定时抓，存 Neon）
+// - 配了 DATABASE_URL 时，把抓到的条目囤进 Neon，并让搜索跨全部历史
 import { buildMergedItems } from './_feed.js';
-import { dbEnabled, upsertItems, searchItems, getReasons } from './_db.js';
+import { dbEnabled, searchItems, querySocialPosts, socialStatus } from './_db.js';
+import { applyStoredEnrichment, enrichInBackground } from './_enrich.js';
 
 const UPSTREAM = 'https://aihot.virxact.com';
 const UA =
@@ -43,6 +46,21 @@ export default async function handler(req, res) {
   const shouldMerge = isItems && !hasCursor && (!categoryParam || categoryParam === 'paper');
 
   try {
+    // 0) 社媒声量：/api/social?topic=t-music&sort=heat|rising&days=7&take=30 或 ?q=Suno
+    if (subPath === 'social') {
+      res.setHeader('content-type', 'application/json; charset=utf-8');
+      if (!dbEnabled()) return res.status(200).send(JSON.stringify({ enabled: false, posts: [] }));
+      const posts = await querySocialPosts({
+        topic: params.get('topic') || undefined,
+        q: (params.get('q') || '').trim() || undefined,
+        sort: params.get('sort') === 'rising' ? 'rising' : 'heat',
+        days: Math.min(parseInt(params.get('days') || '7', 10) || 7, 30),
+        take: Math.min(parseInt(params.get('take') || '30', 10) || 30, 100),
+      });
+      const status = await socialStatus();
+      return res.status(200).send(JSON.stringify({ ...status, posts }));
+    }
+
     // 1) 搜索：配了数据库就查自有历史库（可跨 30 天+），命中即返回。
     if (isItems && q.length >= 2 && dbEnabled()) {
       const take = parseInt(params.get('take') || '100', 10);
@@ -57,25 +75,20 @@ export default async function handler(req, res) {
       // 库里暂时没有 → 落到下面的实时合并（冷启动友好）
     }
 
-    // 2) 默认动态：实时合并 aihot + HF + arXiv，并顺手囤进数据库。
+    // 2) 默认动态：实时合并 aihot + HF + arXiv，附加库内富化数据，缺的后台补。
     if (shouldMerge) {
-      const { status, parsed, items } = await buildMergedItems(params);
+      const { status, parsed, items: rawItems } = await buildMergedItems(params);
 
-      // 附加已生成的推荐理由（来自 Neon；新条目要等囤货生成后才有）
+      let items = rawItems;
       if (dbEnabled()) {
-        try {
-          const reasons = await getReasons(items.map((i) => i.url));
-          for (const it of items) if (reasons[it.url]) it.reason = reasons[it.url];
-        } catch {
-          /* 理由附加失败不影响主流程 */
-        }
+        const { items: enriched, enrichMap } = await applyStoredEnrichment(rawItems);
+        items = enriched;
+        // 响应后台：囤货 + 为缺翻译/理由/亮点/配图的条目补齐（幂等、限量）
+        enrichInBackground(rawItems, enrichMap);
       }
 
       parsed.items = items;
       parsed.count = items.length;
-
-      // 顺手囤货（fire-and-forget，不阻塞响应、不影响失败时返回）
-      if (dbEnabled()) upsertItems(items).catch(() => {});
 
       res.setHeader('content-type', 'application/json; charset=utf-8');
       res.setHeader('x-sources-merged', 'hf,arxiv');

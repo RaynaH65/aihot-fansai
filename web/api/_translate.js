@@ -1,43 +1,31 @@
-// 翻译模块（可选）：把英文条目（HF/arXiv）批量翻译为中文
-// 需要环境变量 ANTHROPIC_API_KEY；缺失时直接 passthrough，不报错
-const API_URL = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-haiku-4-5';
-const TTL_MS = 24 * 3600_000; // 24 小时（翻译结果稳定）
-const translationCache = new Map(); // key: item.id → { title, summary }
+// 翻译模块：把英文条目（HF/arXiv 论文等）批量翻译为中文。
+// 用 MiniMax（env MINIMAX_API_KEY，与推荐理由同一把 key）；缺失时直接 passthrough，不报错。
+// 结果由调用方（_enrich.js）持久化到 Neon，这里只留一层进程内缓存兜底。
+import { minimaxChat, parseModelJson, hasMinimaxKey } from './_minimax.js';
 
-function hasKey() {
-  return !!process.env.ANTHROPIC_API_KEY;
-}
+const TTL_MS = 24 * 3600_000; // 24 小时（翻译结果稳定）
+const BATCH = 12; // 单次请求条数，控制时延与输出长度
+const translationCache = new Map(); // key: item.url → { ts, title, summary }
 
 // 判断是否需要翻译（标题或摘要里有较多英文字母 → 英文内容）
-function looksEnglish(s) {
+export function looksEnglish(s) {
   if (!s) return false;
   const letters = (s.match(/[a-zA-Z]/g) || []).length;
   const cjk = (s.match(/[一-鿿]/g) || []).length;
   return letters > 20 && letters > cjk * 2;
 }
 
-export async function translateItems(items) {
-  if (!hasKey()) return items;
-  if (!items.length) return items;
+export function needsTranslation(it) {
+  return looksEnglish(it.title) || looksEnglish(it.summary);
+}
 
-  // 找出需要翻译且未缓存的
-  const need = [];
-  for (const it of items) {
-    if (!looksEnglish(it.title) && !looksEnglish(it.summary)) continue;
-    const cached = translationCache.get(it.id);
-    if (cached && Date.now() - cached.ts < TTL_MS) continue;
-    need.push(it);
-  }
-
-  if (need.length) {
-    try {
-      const payload = need.map((it, i) => ({
-        idx: i,
-        title: it.title,
-        summary: it.summary?.slice(0, 800) || '',
-      }));
-      const prompt = `把下面 ${payload.length} 条 AI 论文/资讯的英文标题和摘要翻译成中文。保留专业术语（如 "Transformer"、"RLHF"、"LLM"、模型名称等）。摘要要简洁、自然流畅，不超过原文长度。
+async function translateBatch(batch) {
+  const payload = batch.map((it, i) => ({
+    idx: i,
+    title: it.title,
+    summary: it.summary?.slice(0, 800) || '',
+  }));
+  const prompt = `把下面 ${payload.length} 条 AI 论文/资讯的英文标题和摘要翻译成中文。保留专业术语（如 "Transformer"、"RLHF"、"LLM"、模型名称等）。摘要要简洁、自然流畅，不超过原文长度。
 
 输入（JSON 数组）：
 ${JSON.stringify(payload, null, 2)}
@@ -47,50 +35,44 @@ ${JSON.stringify(payload, null, 2)}
 
 不要加 markdown 代码块标记，不要解释，直接输出 JSON 数组。`;
 
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': process.env.ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          max_tokens: 4000,
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const text = data?.content?.[0]?.text || '';
-        const jsonText = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-        const parsed = JSON.parse(jsonText);
-        for (const entry of parsed) {
-          const item = need[entry.idx];
-          if (!item) continue;
-          translationCache.set(item.id, {
-            ts: Date.now(),
-            title: entry.title || item.title,
-            summary: entry.summary || item.summary,
-          });
-        }
-      }
-    } catch (err) {
-      // 翻译失败不影响主流程
-      console.error('[translate] error:', err?.message || err);
+  const parsed = parseModelJson(await minimaxChat(prompt, { maxTokens: 6000 }));
+  if (!Array.isArray(parsed)) return;
+  for (const entry of parsed) {
+    const item = batch[entry.idx];
+    if (!item) continue;
+    translationCache.set(item.url, {
+      ts: Date.now(),
+      title: entry.title || item.title,
+      summary: entry.summary || item.summary,
+    });
+  }
+}
+
+// 为一批条目生成翻译，返回 { url: {title, summary} }（只含成功翻译的）。
+// maxBatches 用于限制单次调用的时延（请求路径传 1-2，cron 传 Infinity）。
+export async function translateItems(items, { maxBatches = Infinity } = {}) {
+  const out = {};
+  if (!items.length) return out;
+
+  const need = [];
+  for (const it of items) {
+    if (!needsTranslation(it)) continue;
+    const cached = translationCache.get(it.url);
+    if (cached && Date.now() - cached.ts < TTL_MS) continue;
+    need.push(it);
+  }
+
+  if (need.length && hasMinimaxKey()) {
+    const batches = [];
+    for (let i = 0; i < need.length; i += BATCH) batches.push(need.slice(i, i + BATCH));
+    for (const b of batches.slice(0, maxBatches)) {
+      await translateBatch(b);
     }
   }
 
-  // 应用翻译（保留原文到 _en 字段）
-  return items.map((it) => {
-    const t = translationCache.get(it.id);
-    if (!t) return it;
-    return {
-      ...it,
-      title: t.title,
-      title_en: it.title,
-      summary: t.summary,
-      _summary_en: it.summary,
-    };
-  });
+  for (const it of items) {
+    const t = translationCache.get(it.url);
+    if (t) out[it.url] = { title: t.title, summary: t.summary };
+  }
+  return out;
 }
