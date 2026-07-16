@@ -1,8 +1,12 @@
-// 社媒内容安全：黄赌毒过滤 + 外语翻译，两层防线。
-// 1) keywordBlocked()：关键词黑名单（中/英/日），normalize 时即拦截，命中的根本不入库
-// 2) translateAndModerate()：MiniMax 逐条审核 + 翻译（处理关键词漏网的软色情/擦边内容，
-//    比如靠视频画面吸引但文案干净的帖子，模型能从上下文识别大部分）
+// 社媒内容安全：黄赌毒/营销引流过滤 + 外语翻译 + 热度点判断，一次 MiniMax 调用全做。
+// 1) keywordBlocked()：关键词黑名单（中/英/日），normalize 时即拦截，命中的根本不入库；
+//    读取层（querySocialPosts）也过一遍，黑名单更新对存量立即生效
+// 2) translateAndModerate()：逐条审核（含文案干净的擦边导流、卖课营销号）+ 翻译 + why（为什么火）
+//
+// MOD_VERSION：审核规则版本。改了规则/新增字段就 +1，存量会在 cron 里按版本号自动重跑。
 import { minimaxChat, parseModelJson, hasMinimaxKey } from './_minimax.js';
+
+export const MOD_VERSION = 2;
 
 // 黑名单：命中即拦。保持词面具体，避免误伤（如 "sex" 用词边界、中文用完整词）。
 const BLOCK_PATTERNS = [
@@ -21,6 +25,8 @@ const BLOCK_PATTERNS = [
   /加微信看片|私聊看片|进群看|老司机资源|白嫖资源|翻墙梯子|USDT 带单|USDT带单/,
   // 擦边内容账号/作品的特征词（魔改坊类=成人向魔改二创；良辰共君欢类命名的"香艳短剧"）
   /魔改坊|香艳|深夜福利|涩涩|擦边|里区|良辰共君欢/,
+  // 卖课/涨粉营销号的高置信话术（更宽泛的判断交给模型）
+  /RT\s*\+\s*comment|comment\s+.{0,12}\s+and\s+I.?ll\s+DM|must\s+follow\s+for\s+dm|评论区扣|私信领取|关注\+点赞|转发抽|留言送/i,
 ];
 
 // 返回 true = 命中黑名单，应拦截
@@ -38,10 +44,11 @@ export function needsZh(s) {
   return total >= 8 && cjk / Math.max(total, 1) < 0.35;
 }
 
-const BATCH = 15;
+const BATCH = 12;
 
-// posts: [{id, text, authorName}] → { id: { zh: string|'' , blocked: boolean } }
-// zh 为 '' 表示无需翻译（本身是中文）；blocked=true 表示模型判定涉黄赌毒/引流。
+// posts: [{id, text, authorName, platform, likes, views, rising}]
+// → { id: { zh: string|'', blocked: boolean, why: string|null } }
+// zh 为 '' 表示无需翻译（本身是中文）；why = 一句「为什么有热度」的判断。
 export async function translateAndModerate(posts) {
   if (!hasMinimaxKey() || !Array.isArray(posts) || posts.length === 0) return {};
   const out = {};
@@ -50,18 +57,25 @@ export async function translateAndModerate(posts) {
     const payload = batch.map((p, i) => ({
       idx: i,
       author: (p.authorName || '').slice(0, 40),
+      platform: p.platform || 'x',
+      likes: p.likes ?? 0,
+      views: p.views ?? 0,
       text: (p.text || '').slice(0, 600),
     }));
-    const prompt = `你是 FansAI 内部 AI 资讯站的社媒内容处理器。对下面 ${payload.length} 条社媒帖子逐条做两件事：
+    const prompt = `你是 FansAI 内部 AI 资讯站的社媒内容处理器。对下面 ${payload.length} 条社媒帖子逐条做三件事：
 
-1. flag：内容审核。若帖子涉及 色情/软色情/擦边（含用暧昧标题或"福利"暗示导流的）、赌博/博彩、毒品、或纯引流广告（加群看片/带单/资源群类），标 "block"；正常内容（包括正常讨论 AI、批评、新闻、作品分享）标 "ok"。宁可略严：明显在打擦边球的标 "block"。
-2. zh：若正文不是中文，翻译成自然流畅的简体中文（保留 @提及、#话题标签、产品名原文）；若已是中文，返回空字符串 ""。
+1. flag：内容审核，取值 "ok" 或 "block"。以下情况标 "block"：
+   - 色情/软色情/擦边（含用暧昧标题或"福利"暗示导流的）、赌博/博彩、毒品
+   - 纯引流营销：卖课/资料包（"XX课程从入门到精通+链接"）、"关注我领资源"、抽奖涨粉、affiliate 链接堆砌
+   正常内容（AI 新闻、作品分享、观点争论、教程干货本身）标 "ok"。判断标准：这条帖的主要目的是内容还是导流。宁可略严。
+2. zh：若正文不是中文，翻译成自然流畅的简体中文（保留 @提及、#话题标签、产品名原文）；已是中文返回 ""。
+3. why：一句话（≤36字）判断这条帖为什么有热度/传播（结合互动数据推断）：是争议对立、新闻爆点、情绪宣泄、名人效应、实用干货、猎奇画面还是玩梗。写具体，别写"内容有趣"这种空话。被 block 的条目 why 返回 ""。
 
 输入（JSON 数组）：
 ${JSON.stringify(payload, null, 2)}
 
 输出**仅** JSON 数组，按 idx 一一对应：
-[{"idx":0,"flag":"ok","zh":"……"}, ...]
+[{"idx":0,"flag":"ok","zh":"……","why":"……"}, ...]
 不要 markdown 代码块，不要解释。`;
 
     const parsed = parseModelJson(await minimaxChat(prompt, { maxTokens: 8000 }));
@@ -73,6 +87,7 @@ ${JSON.stringify(payload, null, 2)}
         // 本身就是中文的帖子不存译文（模型有时会回显），'' = 已处理无需翻译
         zh: needsZh(p.text) && typeof entry.zh === 'string' ? entry.zh.trim() : '',
         blocked: entry.flag === 'block',
+        why: typeof entry.why === 'string' && entry.why.trim() ? entry.why.trim().slice(0, 60) : null,
       };
     }
   }

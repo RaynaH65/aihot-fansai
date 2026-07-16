@@ -74,6 +74,15 @@ async function ensureSchema() {
   // 兼容旧表补列：中文翻译（''=已处理无需翻译，null=待处理）+ 内容安全拦截标记
   await sql`alter table social_posts add column if not exists text_zh text`;
   await sql`alter table social_posts add column if not exists blocked boolean default false`;
+  // 热度点判断 + 审核规则版本号（规则升级后按版本自动重跑存量）
+  await sql`alter table social_posts add column if not exists why_hot text`;
+  await sql`alter table social_posts add column if not exists mod_v integer default 0`;
+  // 热点聚类结果（每轮 cron 重算，单行 latest）
+  await sql`create table if not exists social_stories (
+    id         text primary key,
+    data       jsonb,
+    updated_at timestamptz default now()
+  )`;
   schemaReady = true;
 }
 
@@ -315,7 +324,6 @@ export async function querySocialPosts({ topic, platform, q, sort = 'heat', days
     `;
   }
 
-  const now = Date.now();
   const visible = rows.filter((r) => {
     if (keywordBlocked(r.text_content, r.text_zh, r.author_name, r.author_handle)) return false;
     // X 的存量数据补一道相关性过滤（作者名误命中问题）；IG 靠 hashtag 定位不查正文，Reddit/YT 抓取时已过滤
@@ -325,61 +333,73 @@ export async function querySocialPosts({ topic, platform, q, sort = 'heat', days
     }
     return true;
   });
-  const posts = visible.map((r) => {
-    const likes = Number(r.likes) || 0;
-    const reposts = Number(r.reposts) || 0;
-    const replies = Number(r.replies) || 0;
-    const views = Number(r.views) || 0;
-    const bookmarks = Number(r.bookmarks) || 0;
-    const heat = likes + 2 * reposts + replies + 2 * bookmarks + views / 500;
-    const ageH = Math.max((now - new Date(r.published_at).getTime()) / 3600_000, 6);
-    let rising = heat / ageH; // 互动速度：每小时热度
-    // 抓过两次的帖子用真实增量（likes/views 每小时增长）替代估算
-    if (r.prev_fetched_at && r.prev_likes != null) {
-      const dtH = Math.max((new Date(r.fetched_at).getTime() - new Date(r.prev_fetched_at).getTime()) / 3600_000, 0.5);
-      const dLikes = likes - Number(r.prev_likes || 0);
-      const dViews = views - Number(r.prev_views || 0);
-      rising = Math.max(rising, (dLikes + dViews / 500) / dtH);
-    }
-    return {
-      id: r.id,
-      topic: r.topic,
-      platform: r.platform,
-      url: r.url,
-      authorName: r.author_name,
-      authorHandle: r.author_handle,
-      authorAvatar: r.author_avatar,
-      authorFollowers: r.author_followers != null ? Number(r.author_followers) : null,
-      text: r.text_content,
-      textZh: r.text_zh || null, // ''（无需翻译）归一成 null，前端直接判空
-      lang: r.lang,
-      publishedAt: r.published_at ? new Date(r.published_at).toISOString() : null,
-      likes, reposts, replies, views, bookmarks,
-      media: r.media || null,
-      heat: Math.round(heat),
-      rising: Math.round(rising * 10) / 10,
-    };
-  });
+  const posts = visible.map(mapSocialRow);
 
   posts.sort((a, b) => (sort === 'rising' ? b.rising - a.rising : b.heat - a.heat));
   return posts.slice(0, take);
 }
 
-// 取一批还没做「翻译+审核」的帖子（text_zh 为 null 即未处理；''=已处理无需翻译）
-export async function getUnprocessedSocial(limit = 80) {
+// 行 → 前端帖子结构（含热度/增速计算），querySocialPosts 与热点详情共用
+function mapSocialRow(r) {
+  const now = Date.now();
+  const likes = Number(r.likes) || 0;
+  const reposts = Number(r.reposts) || 0;
+  const replies = Number(r.replies) || 0;
+  const views = Number(r.views) || 0;
+  const bookmarks = Number(r.bookmarks) || 0;
+  const heat = likes + 2 * reposts + replies + 2 * bookmarks + views / 500;
+  const ageH = Math.max((now - new Date(r.published_at).getTime()) / 3600_000, 6);
+  let rising = heat / ageH; // 互动速度：每小时热度
+  // 抓过两次的帖子用真实增量（likes/views 每小时增长）替代估算
+  if (r.prev_fetched_at && r.prev_likes != null) {
+    const dtH = Math.max((new Date(r.fetched_at).getTime() - new Date(r.prev_fetched_at).getTime()) / 3600_000, 0.5);
+    const dLikes = likes - Number(r.prev_likes || 0);
+    const dViews = views - Number(r.prev_views || 0);
+    rising = Math.max(rising, (dLikes + dViews / 500) / dtH);
+  }
+  return {
+    id: r.id,
+    topic: r.topic,
+    platform: r.platform,
+    url: r.url,
+    authorName: r.author_name,
+    authorHandle: r.author_handle,
+    authorAvatar: r.author_avatar,
+    authorFollowers: r.author_followers != null ? Number(r.author_followers) : null,
+    text: r.text_content,
+    textZh: r.text_zh || null, // ''（无需翻译）归一成 null，前端直接判空
+    whyHot: r.why_hot || null,
+    lang: r.lang,
+    publishedAt: r.published_at ? new Date(r.published_at).toISOString() : null,
+    likes, reposts, replies, views, bookmarks,
+    media: r.media || null,
+    heat: Math.round(heat),
+    rising: Math.round(rising * 10) / 10,
+  };
+}
+
+// 取一批还没做「翻译+审核」的帖子：没处理过（text_zh null）或审核规则版本落后的
+export async function getUnprocessedSocial(limit = 80, modVersion = 1) {
   if (!sql) return [];
   await ensureSchema();
   const rows = await sql`
-    select id, text_content, author_name from social_posts
-    where text_zh is null
+    select id, text_content, author_name, platform, likes, views from social_posts
+    where text_zh is null or coalesce(mod_v, 0) < ${modVersion}
     order by fetched_at desc
     limit ${limit}
   `;
-  return rows.map((r) => ({ id: r.id, text: r.text_content, authorName: r.author_name }));
+  return rows.map((r) => ({
+    id: r.id,
+    text: r.text_content,
+    authorName: r.author_name,
+    platform: r.platform,
+    likes: Number(r.likes) || 0,
+    views: Number(r.views) || 0,
+  }));
 }
 
-// 写回翻译+审核结果。map: { id: { zh, blocked } }
-export async function saveSocialModeration(map) {
+// 写回翻译+审核结果。map: { id: { zh, blocked, why } }
+export async function saveSocialModeration(map, modVersion = 1) {
   if (!sql) return 0;
   const entries = Object.entries(map || {});
   if (!entries.length) return 0;
@@ -388,13 +408,46 @@ export async function saveSocialModeration(map) {
   for (const [id, m] of entries) {
     await sql`
       update social_posts set
-        text_zh = ${m.zh ?? ''},
-        blocked = blocked or ${!!m.blocked}
+        text_zh = coalesce(nullif(${m.zh ?? ''}, ''), text_zh, ''),
+        blocked = blocked or ${!!m.blocked},
+        why_hot = coalesce(${m.why || null}, why_hot),
+        mod_v   = ${modVersion}
       where id = ${id}
     `;
     n++;
   }
   return n;
+}
+
+// 存/取热点聚类结果（单行 latest，每轮重算覆盖）
+export async function saveStories(stories) {
+  if (!sql) return false;
+  await ensureSchema();
+  await sql`
+    insert into social_stories (id, data, updated_at) values ('latest', ${JSON.stringify(stories)}, now())
+    on conflict (id) do update set data = excluded.data, updated_at = now()
+  `;
+  return true;
+}
+
+export async function getStories() {
+  if (!sql) return { stories: [], updatedAt: null };
+  await ensureSchema();
+  const [row] = await sql`select data, updated_at from social_stories where id = 'latest'`;
+  return {
+    stories: Array.isArray(row?.data) ? row.data : [],
+    updatedAt: row?.updated_at ? new Date(row.updated_at).toISOString() : null,
+  };
+}
+
+// 按 id 取一批帖子（热点详情用），沿用可见性过滤（黑名单+相关性）
+export async function getSocialPostsByIds(ids) {
+  if (!sql || !Array.isArray(ids) || !ids.length) return [];
+  await ensureSchema();
+  const rows = await sql`select * from social_posts where id = any(${ids}) and coalesce(blocked,false) = false`;
+  return rows
+    .filter((r) => !keywordBlocked(r.text_content, r.text_zh, r.author_name, r.author_handle))
+    .map(mapSocialRow);
 }
 
 // 社媒库整体状态（前端用来提示「还没抓过/上次抓取时间」）

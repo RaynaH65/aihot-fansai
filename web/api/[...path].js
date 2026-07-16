@@ -6,6 +6,7 @@
 // - 配了 DATABASE_URL 时，把抓到的条目囤进 Neon，并让搜索跨全部历史
 import { buildMergedItems } from './_feed.js';
 import { dbEnabled, searchItems, querySocialPosts, socialStatus } from './_db.js';
+import { readStories } from './_stories.js';
 import { applyStoredEnrichment, enrichInBackground } from './_enrich.js';
 
 const UPSTREAM = 'https://aihot.virxact.com';
@@ -46,6 +47,13 @@ export default async function handler(req, res) {
   const shouldMerge = isItems && !hasCursor && (!categoryParam || categoryParam === 'paper');
 
   try {
+    // 0.a) 今日热点（聚类）：/api/social/stories
+    if (subPath === 'social/stories') {
+      res.setHeader('content-type', 'application/json; charset=utf-8');
+      if (!dbEnabled()) return res.status(200).send(JSON.stringify({ stories: [], updatedAt: null }));
+      return res.status(200).send(JSON.stringify(await readStories()));
+    }
+
     // 0) 社媒声量：/api/social?topic=t-music&platform=x|reddit|youtube|instagram&sort=heat|rising&days=7&take=30 或 ?q=Suno
     if (subPath === 'social') {
       res.setHeader('content-type', 'application/json; charset=utf-8');

@@ -455,8 +455,14 @@ function SocialCard({ post, showTopic = false, rank = null }) {
   const translated = post.textZh && post.textZh !== post.text;
   const bodyText = translated && !showOrig ? post.textZh : post.text;
   return (
-    <div className="card-hover bg-[var(--color-card)] border border-[var(--color-line)] rounded-xl px-4 pt-4 pb-3 flex flex-col">
-      {/* 头部：作者 + 平台 + 上升 */}
+    <div
+      onClick={() => window.open(post.url, '_blank', 'noopener')}
+      role="link"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && window.open(post.url, '_blank', 'noopener')}
+      className="card-hover cursor-pointer bg-[var(--color-card)] border border-[var(--color-line)] rounded-xl px-4 pt-4 pb-3 flex flex-col"
+    >
+      {/* 头部：作者 + 角色标注 + 平台 + 上升 */}
       <div className="flex items-center gap-2.5 mb-3">
         {rank != null && (
           <span className={`font-mono text-[13px] w-5 text-center flex-none ${rank < 3 ? 'text-[var(--color-signal)]' : 'text-[var(--color-mute-2)]'}`}>
@@ -477,7 +483,19 @@ function SocialCard({ post, showTopic = false, rank = null }) {
             {post.authorFollowers ? ` · ${fmtNum(post.authorFollowers)}${post.platform === 'youtube' ? ' 订阅' : post.platform === 'reddit' ? ' 成员' : ' 粉'}` : ''}
           </div>
         </div>
-        {post.rising >= 50 && (
+        {post.roles?.map((r) => (
+          <span
+            key={r}
+            className={`flex-none tape px-1.5 py-1 rounded ${
+              r === '源头'
+                ? 'text-[var(--color-accent)] bg-[var(--color-accent-soft)]'
+                : 'text-[var(--color-signal)] bg-[var(--color-signal-soft)]'
+            }`}
+          >
+            {r}
+          </span>
+        ))}
+        {post.rising >= 50 && !post.roles?.includes('上升最快') && (
           <span className="flex-none inline-flex items-center gap-1 tape text-[var(--color-signal)] bg-[var(--color-signal-soft)] px-1.5 py-1 rounded">
             <Icon d={I.trend} className="w-3 h-3" /> 上升
           </span>
@@ -500,6 +518,17 @@ function SocialCard({ post, showTopic = false, rank = null }) {
         >
           {showOrig ? '看译文' : '看原文'}
         </button>
+      )}
+
+      {/* 为什么火（MiniMax 判断） */}
+      {post.whyHot && (
+        <div className="mt-2.5 flex items-start gap-1.5 text-[12px] leading-relaxed text-[var(--color-mute)]">
+          <Icon d={I.flame} className="w-3 h-3 mt-[3px] flex-none text-[var(--color-signal)]" />
+          <span>
+            <span className="tape text-[var(--color-signal)] mr-1.5">热度点</span>
+            {post.whyHot}
+          </span>
+        </div>
       )}
 
       <MediaGrid media={post.media} />
@@ -556,7 +585,7 @@ function SocialStrip({ topicKey }) {
   useEffect(() => {
     let cancelled = false;
     setPosts(null);
-    fetch(`/api/social?topic=${topicKey}&sort=${sort}&take=6`)
+    fetch(`/api/social?topic=${topicKey}&sort=${sort}&take=4`)
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return;
@@ -588,7 +617,7 @@ function SocialStrip({ topicKey }) {
       {!posts ? (
         <Loading text="扫描声量" />
       ) : (
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="space-y-3">
           {posts.map((p, i) => (
             <div key={p.id} className="anim-rise" style={{ animationDelay: `${Math.min(i, 8) * 50}ms` }}>
               <SocialCard post={p} />
@@ -596,6 +625,74 @@ function SocialStrip({ topicKey }) {
           ))}
         </div>
       )}
+    </section>
+  );
+}
+
+// 今日热点：同一事件的多平台讨论聚类（源头 / 热度最高 / 上升最快）
+function StoriesSection() {
+  const [data, setData] = useState(null);
+  const [open, setOpen] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/social/stories')
+      .then((r) => r.json())
+      .then((d) => !cancelled && setData(d))
+      .catch(() => !cancelled && setData({ stories: [] }));
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!data || !data.stories?.length) return null;
+  return (
+    <section className="mb-9">
+      <div className="flex items-center gap-3 mb-3.5">
+        <Icon d={I.spark} className="w-4 h-4 text-[var(--color-signal)]" />
+        <h2 className="text-[15px] masthead font-bold">今日热点</h2>
+        <span className="tape text-[var(--color-mute-2)]">同一事件的多平台讨论 · AI 聚类</span>
+        <span className="flex-1 h-px bg-[var(--color-line-2)]" />
+        {data.updatedAt && <span className="tape text-[var(--color-mute-2)]">{relTime(data.updatedAt)}更新</span>}
+      </div>
+      <div className="space-y-2.5">
+        {data.stories.map((s, i) => {
+          const isOpen = open === i;
+          return (
+            <div key={i} className={`border rounded-xl overflow-hidden transition-colors ${isOpen ? 'border-[var(--color-line)] bg-[var(--color-bg-2)]/40' : 'border-[var(--color-line-2)]'}`}>
+              <button
+                type="button"
+                onClick={() => setOpen(isOpen ? null : i)}
+                className="w-full text-left px-4 sm:px-5 py-4 flex items-start gap-3.5 group"
+              >
+                <span className={`font-mono text-[17px] leading-tight flex-none ${i < 3 ? 'text-[var(--color-signal)]' : 'text-[var(--color-mute-2)]'}`}>
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[15.5px] masthead font-bold text-[var(--color-ink)] group-hover:text-[var(--color-accent)] transition-colors">
+                    {s.title}
+                  </span>
+                  <span className="block text-[12.5px] leading-relaxed text-[var(--color-mute)] mt-1">{s.summary}</span>
+                  <span className="flex items-center gap-2.5 mt-2">
+                    <span className="tape text-[var(--color-mute-2)]">{s.posts.length} 条讨论</span>
+                    <span className="flex items-center gap-1">
+                      {s.platforms?.map((p) => <PlatformBadge key={p} platform={p} />)}
+                    </span>
+                    <span className="tape text-[var(--color-accent)] truncate">
+                      {s.topics?.map((t) => TOPICS.find((x) => x.key === t)?.label).filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
+                </span>
+                <Icon d={I.chev} className={`w-4 h-4 flex-none mt-1 text-[var(--color-mute-2)] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {isOpen && (
+                <div className="px-4 sm:px-5 pb-4 space-y-3">
+                  {s.posts.map((p) => (
+                    <SocialCard key={p.id} post={p} showTopic />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -626,6 +723,12 @@ function SocialBoard() {
 
   return (
     <div>
+      <StoriesSection />
+      <div className="flex items-center gap-3 mb-3.5">
+        <Icon d={I.flame} className="w-4 h-4 text-[var(--color-signal)]" />
+        <h2 className="text-[15px] masthead font-bold">全部帖子</h2>
+        <span className="flex-1 h-px bg-[var(--color-line-2)]" />
+      </div>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 mb-2.5">
         <SortToggle sort={sort} onChange={setSort} />
         <div className="flex items-center gap-1 overflow-x-auto no-scrollbar -mx-1 px-1">
@@ -662,7 +765,7 @@ function SocialBoard() {
           {status?.count ? '该筛选下暂无帖子' : '还没有社媒数据 —— 在 Vercel 配置 APIFY_TOKEN 后访问 /api/cron/social 抓一轮'}
         </Empty>
       ) : (
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="space-y-3">
           {posts.map((p, i) => (
             <div key={p.id} className="anim-rise" style={{ animationDelay: `${Math.min(i, 10) * 40}ms` }}>
               <SocialCard post={p} showTopic rank={i} />
@@ -760,7 +863,7 @@ function DetailView({ item, onBack }) {
             <h2 className="text-[15px] masthead font-bold">相关声量</h2>
             <span className="tape text-[var(--color-mute-2)]">X 上关于「{socialQueryFor(item)}」的讨论</span>
           </div>
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="space-y-3">
             {related.map((p) => <SocialCard key={p.id} post={p} showTopic />)}
           </div>
         </section>

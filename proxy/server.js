@@ -85,6 +85,13 @@ http
     const shouldMerge = isItems && !hasCursor && (!categoryParam || categoryParam === 'paper');
 
     try {
+      // 0.a) 今日热点（聚类）
+      if (subPath === 'social/stories') {
+        if (!dbEnabled()) return sendJson(res, 200, { stories: [], updatedAt: null });
+        const { readStories } = await import('../web/api/_stories.js');
+        return sendJson(res, 200, await readStories());
+      }
+
       // 0) 社媒声量
       if (subPath === 'social') {
         if (!dbEnabled()) return sendJson(res, 200, { enabled: false, posts: [] });
@@ -115,18 +122,20 @@ http
         const days = Math.min(parseInt(params.get('days') || '7', 10) || 7, 30);
         const maxItems = Math.min(parseInt(params.get('max') || '400', 10) || 400, 1200);
         const result = await runSocialScrape({ days, maxItems });
-        // 翻译 + 审核补处理（与线上 cron 行为一致：小批量循环、逐批落库）
+        // 翻译 + 审核补处理（与线上 cron 行为一致：小批量循环、逐批落库），完了重算热点
         const { getUnprocessedSocial, saveSocialModeration } = await import('../web/api/_db.js');
-        const { translateAndModerate } = await import('../web/api/_moderation.js');
+        const { translateAndModerate, MOD_VERSION } = await import('../web/api/_moderation.js');
         const moderation = { processed: 0, blocked: 0 };
         for (;;) {
-          const pending = await getUnprocessedSocial(15);
+          const pending = await getUnprocessedSocial(15, MOD_VERSION);
           if (!pending.length) break;
           const map = await translateAndModerate(pending);
           if (!Object.keys(map).length) break;
-          moderation.processed += await saveSocialModeration(map);
+          moderation.processed += await saveSocialModeration(map, MOD_VERSION);
           moderation.blocked += Object.values(map).filter((m) => m.blocked).length;
         }
+        const { rebuildStories } = await import('../web/api/_stories.js');
+        moderation.stories = await rebuildStories();
         return sendJson(res, result.ok ? 200 : 502, { ...result, moderation });
       }
 
