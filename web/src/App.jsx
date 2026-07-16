@@ -949,6 +949,37 @@ export default function App() {
   const { theme, resolved, cycle } = useTheme();
   const logoSrc = resolved === 'light' ? '/logo.svg' : '/logo-dark.svg';
 
+  // 详情页接入浏览器历史：打开时 pushState，浏览器返回/手势左滑/Esc 都能回列表
+  const openItem = (item) => {
+    setSelected(item);
+    try {
+      window.history.pushState({ fansaiDetail: true }, '');
+    } catch { /* ignore */ }
+  };
+  const closeDetail = () => {
+    if (window.history.state?.fansaiDetail) window.history.back(); // 触发 popstate 统一关闭
+    else setSelected(null);
+  };
+  useEffect(() => {
+    // 详情页状态下刷新会把 fansaiDetail 残留在基准历史条目上，进站时清掉
+    if (window.history.state?.fansaiDetail) {
+      try { window.history.replaceState(null, ''); } catch { /* ignore */ }
+    }
+    const onPop = () => setSelected(null);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (window.history.state?.fansaiDetail) window.history.back();
+      else setSelected(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selected]);
+
   const go = (next) => {
     setNav(next);
     setSelected(null);
@@ -1100,7 +1131,7 @@ export default function App() {
       <main className="flex-1 min-w-0 pt-[52px] lg:pt-0">
         <div className="max-w-[880px] mx-auto px-4 sm:px-8 py-7 sm:py-9">
           {selected ? (
-            <DetailView item={selected} onBack={() => setSelected(null)} />
+            <DetailView item={selected} onBack={closeDetail} />
           ) : (
             <>
               {/* 报头 */}
@@ -1186,7 +1217,7 @@ export default function App() {
               )}
 
               {!loading && !error && data && Array.isArray(data.sections) && (
-                <DailyView data={data} onOpen={setSelected} />
+                <DailyView data={data} onOpen={openItem} />
               )}
 
               {!loading && !error && data && Array.isArray(data.items) && (
@@ -1209,7 +1240,7 @@ export default function App() {
                               key={it.id || it.url}
                               item={it}
                               isLast={idx === group.length - 1}
-                              onOpen={setSelected}
+                              onOpen={openItem}
                             />
                           ))}
                       </div>
