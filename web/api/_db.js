@@ -1,6 +1,7 @@
 // Neon (Postgres) 持久层 —— 把抓到的条目囤进自己的库，支持跨全部历史搜索。
 // 没配 DATABASE_URL 时全部退化为 no-op，站点行为跟以前完全一样。
 import { neon } from '@neondatabase/serverless';
+import { keywordBlocked } from './_moderation.js';
 
 // Vercel 的 Neon / Postgres 集成可能用不同的变量名注入连接串，挨个认一遍。
 const CANDIDATES = [
@@ -277,6 +278,7 @@ export async function upsertSocialPosts(posts) {
 }
 
 // 查社媒帖子：按专题/平台/关键词，近 N 天，带热度与增速评分。已拦截（blocked）的不出。
+// 读取层再过一遍关键词黑名单（防线三）：黑名单更新后对历史存量立即生效，不用等重新审核。
 // sort: 'heat'（总热度）| 'rising'（上升快）
 export async function querySocialPosts({ topic, platform, q, sort = 'heat', days = 7, take = 30 } = {}) {
   if (!sql) return [];
@@ -313,7 +315,10 @@ export async function querySocialPosts({ topic, platform, q, sort = 'heat', days
   }
 
   const now = Date.now();
-  const posts = rows.map((r) => {
+  const visible = rows.filter(
+    (r) => !keywordBlocked(r.text_content, r.text_zh, r.author_name, r.author_handle)
+  );
+  const posts = visible.map((r) => {
     const likes = Number(r.likes) || 0;
     const reposts = Number(r.reposts) || 0;
     const replies = Number(r.replies) || 0;

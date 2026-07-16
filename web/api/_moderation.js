@@ -19,6 +19,8 @@ const BLOCK_PATTERNS = [
   /\b(cannabis|marijuana|weed|cocaine|meth|mdma|ketamine|psychedelics?)\b/i,
   // 灰产引流
   /加微信看片|私聊看片|进群看|老司机资源|白嫖资源|翻墙梯子|USDT 带单|USDT带单/,
+  // 擦边内容账号/作品的特征词（魔改坊类=成人向魔改二创；良辰共君欢类命名的"香艳短剧"）
+  /魔改坊|香艳|深夜福利|涩涩|擦边|里区|良辰共君欢/,
 ];
 
 // 返回 true = 命中黑名单，应拦截
