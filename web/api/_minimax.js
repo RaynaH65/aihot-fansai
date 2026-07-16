@@ -1,6 +1,8 @@
 // MiniMax 文本生成的最小客户端 —— _translate.js / _reason.js 共用。
 // 需要环境变量 MINIMAX_API_KEY；缺失时调用方各自退化为 no-op。
-const API_URL = 'https://api.minimaxi.chat/v1/text/chatcompletion_v2';
+// 端点可用 MINIMAX_BASE_URL 覆盖（默认 api.minimaxi.chat；若 key 属于 minimaxi.com 平台则配成 https://api.minimaxi.com）
+const BASE = (process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.chat').replace(/\/$/, '');
+const API_URL = `${BASE}/v1/text/chatcompletion_v2`;
 const MODEL = process.env.MINIMAX_MODEL || 'MiniMax-Text-01';
 
 export const hasMinimaxKey = () => !!process.env.MINIMAX_API_KEY;
