@@ -33,12 +33,61 @@
   --font-mono: "IBM Plex Mono", "SF Mono", Menlo, Consolas, monospace;
 }
 
+/* ---- 主题化的非色板变量（深色 = 默认） ---- */
+:root {
+  color-scheme: dark;
+  --glow-a: rgba(86, 100, 216, 0.14);
+  --glow-b: rgba(232, 180, 90, 0.05);
+  --noise-opacity: 0.028;
+  --scroll-thumb: rgba(152, 164, 192, 0.16);
+  --selection-bg: rgba(101, 115, 230, 0.35);
+  --hover-border: rgba(141, 156, 255, 0.35);
+  --hover-shadow: rgba(60, 72, 180, 0.45);
+}
+
+/* ---- 浅色主题（日刊版）：data-theme="light" 时整套变量翻转 ---- */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --color-bg: #f3f4f8;
+  --color-bg-2: #eceef4;
+  --color-card: #ffffff;
+  --color-card-2: #f8f9fd;
+  --color-ink: #171a23;
+  --color-ink-2: #3b4154;
+  --color-mute: #6b7288;
+  --color-mute-2: #9aa1b5;
+  --color-line: rgba(28, 36, 62, 0.13);
+  --color-line-2: rgba(28, 36, 62, 0.065);
+
+  --color-accent: #4a57c8;
+  --color-accent-deep: #3a45a0;   /* FansAI logo 原色 */
+  --color-accent-soft: rgba(74, 87, 200, 0.1);
+  --color-signal: #b0741c;
+  --color-signal-soft: rgba(176, 116, 28, 0.1);
+  --color-danger: #c2405c;
+
+  --color-cat-model: #9c6210;
+  --color-cat-product: #1d7a4b;
+  --color-cat-industry: #b93a59;
+  --color-cat-paper: #7947c2;
+  --color-cat-tip: #2272ad;
+
+  --glow-a: rgba(74, 87, 200, 0.09);
+  --glow-b: rgba(176, 116, 28, 0.05);
+  --noise-opacity: 0.02;
+  --scroll-thumb: rgba(28, 36, 62, 0.18);
+  --selection-bg: rgba(74, 87, 200, 0.22);
+  --hover-border: rgba(58, 69, 160, 0.4);
+  --hover-shadow: rgba(58, 69, 160, 0.18);
+}
+
 html, body, #root {
   min-height: 100%;
   background: var(--color-bg);
   color: var(--color-ink);
   font-family: var(--font-sans);
 }
+body { transition: background 0.25s ease, color 0.25s ease; }
 
 * { -webkit-font-smoothing: antialiased; }
 
@@ -50,8 +99,8 @@ body::before {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(58% 42% at 12% -8%, rgba(86, 100, 216, 0.14), transparent 62%),
-    radial-gradient(40% 34% at 96% 108%, rgba(232, 180, 90, 0.05), transparent 60%);
+    radial-gradient(58% 42% at 12% -8%, var(--glow-a), transparent 62%),
+    radial-gradient(40% 34% at 96% 108%, var(--glow-b), transparent 60%);
 }
 body::after {
   content: '';
@@ -59,7 +108,7 @@ body::after {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: 0.028;
+  opacity: var(--noise-opacity);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 #root { position: relative; z-index: 1; }
@@ -81,11 +130,11 @@ body::after {
 .dot-live { animation: pulse-dot 2.4s ease-out infinite; }
 
 /* ---- 细节 ---- */
-::selection { background: rgba(101, 115, 230, 0.35); }
+::selection { background: var(--selection-bg); }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(152, 164, 192, 0.16);
+  background: var(--scroll-thumb);
   border-radius: 999px;
   border: 3px solid var(--color-bg);
 }
@@ -108,10 +157,10 @@ body::after {
 /* 卡片 hover 微光 */
 .card-hover { transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease; }
 .card-hover:hover {
-  border-color: rgba(141, 156, 255, 0.35);
+  border-color: var(--hover-border);
   background: var(--color-card-2);
   transform: translateY(-1px);
-  box-shadow: 0 6px 24px -12px rgba(60, 72, 180, 0.45);
+  box-shadow: 0 6px 24px -12px var(--hover-shadow);
 }
 
 /* 行数截断 */

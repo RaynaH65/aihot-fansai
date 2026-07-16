@@ -121,7 +121,71 @@ const I = {
   trend: 'M3 17l6-6 4 4 8-8|M15 7h6v6',
   play: 'M8 5.5v13l11-6.5z',
   spark: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z',
+  sun: 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z|M12 2v2|M12 20v2|M4.9 4.9l1.4 1.4|M17.7 17.7l1.4 1.4|M2 12h2|M20 12h2|M4.9 19.1l1.4-1.4|M17.7 6.3l1.4-1.4',
+  moon: 'M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z',
+  auto: 'M4 5h16v11H4z|M9 20h6|M12 16v4',
 };
+
+// ---- 主题（auto=跟随系统 / light / dark）----
+function useTheme() {
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('fansai-theme') || 'auto'; } catch { return 'auto'; }
+  });
+  const [resolved, setResolved] = useState('dark');
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: light)');
+    const apply = () => {
+      const r = theme === 'auto' ? (mq.matches ? 'light' : 'dark') : theme;
+      setResolved(r);
+      document.documentElement.dataset.theme = r;
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', r === 'light' ? '#f3f4f8' : '#0b0c10');
+    };
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [theme]);
+  const cycle = () => {
+    setTheme((t) => {
+      const next = t === 'auto' ? 'light' : t === 'light' ? 'dark' : 'auto';
+      try { localStorage.setItem('fansai-theme', next); } catch { /* ignore */ }
+      return next;
+    });
+  };
+  return { theme, resolved, cycle };
+}
+
+const THEME_META = {
+  auto: { icon: 'auto', label: '跟随系统' },
+  light: { icon: 'sun', label: '日间模式' },
+  dark: { icon: 'moon', label: '夜间模式' },
+};
+
+function ThemeToggle({ theme, onCycle, compact = false }) {
+  const meta = THEME_META[theme];
+  if (compact) {
+    return (
+      <button
+        onClick={onCycle}
+        aria-label={`主题：${meta.label}（点按切换）`}
+        title={`主题：${meta.label}（点按切换）`}
+        className="text-[var(--color-mute)] hover:text-[var(--color-accent)] transition-colors"
+      >
+        <Icon d={I[meta.icon]} className="w-[18px] h-[18px]" />
+      </button>
+    );
+  }
+  return (
+    <button
+      onClick={onCycle}
+      className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-[var(--color-line)] text-[var(--color-mute)] hover:text-[var(--color-ink-2)] hover:bg-[var(--color-line-2)] transition-colors"
+    >
+      <Icon d={I[meta.icon]} className="w-4 h-4" />
+      <span className="text-[12px]">{meta.label}</span>
+      <span className="ml-auto tape text-[var(--color-mute-2)]">{theme}</span>
+    </button>
+  );
+}
 
 function CatTag({ category, className = '' }) {
   const meta = CAT_META[category];
@@ -689,6 +753,8 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [drawer, setDrawer] = useState(false);
   const searchRef = useRef(null);
+  const { theme, resolved, cycle } = useTheme();
+  const logoSrc = resolved === 'light' ? '/logo.svg' : '/logo-dark.svg';
 
   const go = (next) => {
     setNav(next);
@@ -778,7 +844,7 @@ export default function App() {
         <div className="px-5 pt-6 pb-5">
           <div className="flex items-center gap-2.5">
             <img
-              src="/logo-dark.svg"
+              src={logoSrc}
               alt="FansAI"
               className="h-[22px] w-auto"
               onError={(e) => {
@@ -794,11 +860,14 @@ export default function App() {
         <nav className="px-3 pb-4 space-y-0.5 flex-1">
           <SidebarContent nav={nav} go={go} />
         </nav>
-        <div className="px-5 py-4 border-t border-[var(--color-line-2)] space-y-1.5">
-          <a href="https://github.com/RaynaH65/aihot-fansai" target="_blank" rel="noreferrer" className="tape text-[var(--color-mute-2)] hover:text-[var(--color-accent)] transition-colors block">
-            GitHub ↗
-          </a>
-          <div className="tape text-[var(--color-mute-2)]">FANSAI EYES ONLY</div>
+        <div className="px-4 py-4 border-t border-[var(--color-line-2)] space-y-3">
+          <ThemeToggle theme={theme} onCycle={cycle} />
+          <div className="px-1 space-y-1.5">
+            <a href="https://github.com/RaynaH65/aihot-fansai" target="_blank" rel="noreferrer" className="tape text-[var(--color-mute-2)] hover:text-[var(--color-accent)] transition-colors block">
+              GitHub ↗
+            </a>
+            <div className="tape text-[var(--color-mute-2)]">FANSAI EYES ONLY</div>
+          </div>
         </div>
       </aside>
 
@@ -808,10 +877,11 @@ export default function App() {
           <button onClick={() => setDrawer(true)} aria-label="菜单" className="text-[var(--color-ink-2)]">
             <Icon d={I.menu} className="w-5 h-5" />
           </button>
-          <img src="/logo-dark.svg" alt="FansAI" className="h-[18px] w-auto" />
+          <img src={logoSrc} alt="FansAI" className="h-[18px] w-auto" />
           <span className="tape text-[var(--color-mute-2)]">情报局</span>
           <span className="flex-1" />
           <span className="tape text-[var(--color-mute-2)]">{dateStamp}</span>
+          <ThemeToggle theme={theme} onCycle={cycle} compact />
         </div>
       </div>
 
@@ -821,7 +891,7 @@ export default function App() {
           <div className="absolute inset-0 bg-black/60" onClick={() => setDrawer(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-[264px] bg-[var(--color-bg-2)] border-r border-[var(--color-line)] p-4 overflow-y-auto anim-rise">
             <div className="flex items-center justify-between mb-4 px-1">
-              <img src="/logo-dark.svg" alt="FansAI" className="h-[20px] w-auto" />
+              <img src={logoSrc} alt="FansAI" className="h-[20px] w-auto" />
               <button onClick={() => setDrawer(false)} aria-label="关闭" className="text-[var(--color-mute)]">
                 <Icon d={I.close} className="w-5 h-5" />
               </button>
