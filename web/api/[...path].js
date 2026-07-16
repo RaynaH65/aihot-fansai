@@ -46,12 +46,13 @@ export default async function handler(req, res) {
   const shouldMerge = isItems && !hasCursor && (!categoryParam || categoryParam === 'paper');
 
   try {
-    // 0) 社媒声量：/api/social?topic=t-music&sort=heat|rising&days=7&take=30 或 ?q=Suno
+    // 0) 社媒声量：/api/social?topic=t-music&platform=x|reddit|youtube|instagram&sort=heat|rising&days=7&take=30 或 ?q=Suno
     if (subPath === 'social') {
       res.setHeader('content-type', 'application/json; charset=utf-8');
       if (!dbEnabled()) return res.status(200).send(JSON.stringify({ enabled: false, posts: [] }));
       const posts = await querySocialPosts({
         topic: params.get('topic') || undefined,
+        platform: params.get('platform') || undefined,
         q: (params.get('q') || '').trim() || undefined,
         sort: params.get('sort') === 'rising' ? 'rising' : 'heat',
         days: Math.min(parseInt(params.get('days') || '7', 10) || 7, 30),

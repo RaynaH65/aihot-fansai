@@ -69,6 +69,9 @@ async function ensureSchema() {
     fetched_at    timestamptz default now()
   )`;
   await sql`create index if not exists social_topic_idx on social_posts (topic, published_at desc)`;
+  // 兼容旧表补列：中文翻译（''=已处理无需翻译，null=待处理）+ 内容安全拦截标记
+  await sql`alter table social_posts add column if not exists text_zh text`;
+  await sql`alter table social_posts add column if not exists blocked boolean default false`;
   schemaReady = true;
 }
 
@@ -246,13 +249,13 @@ export async function upsertSocialPosts(posts) {
     if (!p || !p.id) continue;
     await sql`
       insert into social_posts (id, topic, platform, url, author_name, author_handle, author_avatar, author_followers,
-                                text_content, lang, published_at, likes, reposts, replies, views, bookmarks, media, fetched_at)
+                                text_content, lang, published_at, likes, reposts, replies, views, bookmarks, media, blocked, fetched_at)
       values (
         ${p.id}, ${p.topic || null}, ${p.platform || 'x'}, ${p.url || null},
         ${p.authorName || null}, ${p.authorHandle || null}, ${p.authorAvatar || null}, ${p.authorFollowers ?? null},
         ${p.text || null}, ${p.lang || null}, ${p.publishedAt ? new Date(p.publishedAt) : null},
         ${p.likes ?? 0}, ${p.reposts ?? 0}, ${p.replies ?? 0}, ${p.views ?? 0}, ${p.bookmarks ?? 0},
-        ${p.media ? JSON.stringify(p.media) : null}, now()
+        ${p.media ? JSON.stringify(p.media) : null}, ${p.blocked ?? false}, now()
       )
       on conflict (id) do update set
         prev_likes      = social_posts.likes,
@@ -265,6 +268,7 @@ export async function upsertSocialPosts(posts) {
         bookmarks = excluded.bookmarks,
         author_followers = excluded.author_followers,
         media     = coalesce(excluded.media, social_posts.media),
+        blocked   = social_posts.blocked or excluded.blocked,
         fetched_at = now()
     `;
     n++;
@@ -272,31 +276,39 @@ export async function upsertSocialPosts(posts) {
   return n;
 }
 
-// 查社媒帖子：按专题 / 关键词，近 N 天，带热度与增速评分。
+// 查社媒帖子：按专题/平台/关键词，近 N 天，带热度与增速评分。已拦截（blocked）的不出。
 // sort: 'heat'（总热度）| 'rising'（上升快）
-export async function querySocialPosts({ topic, q, sort = 'heat', days = 7, take = 30 } = {}) {
+export async function querySocialPosts({ topic, platform, q, sort = 'heat', days = 7, take = 30 } = {}) {
   if (!sql) return [];
   await ensureSchema();
   const since = new Date(Date.now() - days * 86400_000);
+  const pf = platform || null;
   let rows;
   if (topic) {
     rows = await sql`
       select * from social_posts
       where topic = ${topic} and published_at >= ${since}
-      order by published_at desc limit 300
+        and coalesce(blocked, false) = false
+        and (${pf}::text is null or platform = ${pf})
+      order by published_at desc limit 400
     `;
   } else if (q) {
     const esc = q.replace(/[%_\\]/g, '\\$&');
     rows = await sql`
       select * from social_posts
-      where text_content ilike ${'%' + esc + '%'} and published_at >= ${since}
-      order by published_at desc limit 300
+      where (text_content ilike ${'%' + esc + '%'} or text_zh ilike ${'%' + esc + '%'})
+        and published_at >= ${since}
+        and coalesce(blocked, false) = false
+        and (${pf}::text is null or platform = ${pf})
+      order by published_at desc limit 400
     `;
   } else {
     rows = await sql`
       select * from social_posts
       where published_at >= ${since}
-      order by published_at desc limit 600
+        and coalesce(blocked, false) = false
+        and (${pf}::text is null or platform = ${pf})
+      order by published_at desc limit 800
     `;
   }
 
@@ -327,6 +339,7 @@ export async function querySocialPosts({ topic, q, sort = 'heat', days = 7, take
       authorAvatar: r.author_avatar,
       authorFollowers: r.author_followers != null ? Number(r.author_followers) : null,
       text: r.text_content,
+      textZh: r.text_zh || null, // ''（无需翻译）归一成 null，前端直接判空
       lang: r.lang,
       publishedAt: r.published_at ? new Date(r.published_at).toISOString() : null,
       likes, reposts, replies, views, bookmarks,
@@ -338,6 +351,38 @@ export async function querySocialPosts({ topic, q, sort = 'heat', days = 7, take
 
   posts.sort((a, b) => (sort === 'rising' ? b.rising - a.rising : b.heat - a.heat));
   return posts.slice(0, take);
+}
+
+// 取一批还没做「翻译+审核」的帖子（text_zh 为 null 即未处理；''=已处理无需翻译）
+export async function getUnprocessedSocial(limit = 80) {
+  if (!sql) return [];
+  await ensureSchema();
+  const rows = await sql`
+    select id, text_content, author_name from social_posts
+    where text_zh is null
+    order by fetched_at desc
+    limit ${limit}
+  `;
+  return rows.map((r) => ({ id: r.id, text: r.text_content, authorName: r.author_name }));
+}
+
+// 写回翻译+审核结果。map: { id: { zh, blocked } }
+export async function saveSocialModeration(map) {
+  if (!sql) return 0;
+  const entries = Object.entries(map || {});
+  if (!entries.length) return 0;
+  await ensureSchema();
+  let n = 0;
+  for (const [id, m] of entries) {
+    await sql`
+      update social_posts set
+        text_zh = ${m.zh ?? ''},
+        blocked = blocked or ${!!m.blocked}
+      where id = ${id}
+    `;
+    n++;
+  }
+  return n;
 }
 
 // 社媒库整体状态（前端用来提示「还没抓过/上次抓取时间」）

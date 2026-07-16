@@ -86,8 +86,12 @@ export async function fetchArxiv() {
   }
 }
 
-// 限制注入数：默认每分类 2 篇 → 总约 6-8 篇；category=paper 时每分类 5 篇 → 约 15-20 篇
-export function filterArxiv(items, { since, q, category, perCat = 2 }) {
+import { PAPER_INTEREST_RE } from './_topics.js';
+
+// 限制注入数：默认每分类 2 篇 → 总约 6-8 篇；category=paper 时每分类 5 篇 → 约 15-20 篇。
+// mode=selected（精选）时做策展：只留命中 FansAI 兴趣域（AI 原生内容方向）的论文，总量 ≤4，
+// 避免 arXiv 每日全量涌入挤掉其他内容；「全部」和「论文」分类保持宽口径。
+export function filterArxiv(items, { since, q, category, mode, perCat = 2 }) {
   if (category && category !== 'paper') return [];
   let out = items;
   if (since) {
@@ -100,6 +104,17 @@ export function filterArxiv(items, { since, q, category, perCat = 2 }) {
       (i) => i.title.toLowerCase().includes(needle) || i.summary.toLowerCase().includes(needle)
     );
   }
+
+  if (mode === 'selected' && category !== 'paper') {
+    // 标题命中兴趣域 > 只有摘要命中；都不命中的不进精选
+    return out
+      .map((i) => ({ i, score: PAPER_INTEREST_RE.test(i.title) ? 2 : PAPER_INTEREST_RE.test(i.summary) ? 1 : 0 }))
+      .filter((s) => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 4)
+      .map(({ i: { _arxivCat, ...rest } }) => rest);
+  }
+
   const cap = category === 'paper' ? 5 : perCat;
   // 按 arxiv 子分类分桶，各取前 cap 条
   const buckets = new Map();

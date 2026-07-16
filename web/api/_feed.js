@@ -32,8 +32,18 @@ export async function buildMergedItems(params) {
   ]);
 
   const base = Array.isArray(parsed.items) ? parsed.items : [];
-  const opts = { since: params.get('since'), q: params.get('q'), category: params.get('category') };
-  const extras = [...filterHF(hfAll, opts), ...filterArxiv(arxivAll, opts)];
+  const opts = {
+    since: params.get('since'),
+    q: params.get('q'),
+    category: params.get('category'),
+    mode: params.get('mode') || 'selected',
+  };
+  const hfItems = filterHF(hfAll, opts);
+  // HF 与 arXiv 常是同一篇论文（不同 url）——按标题去重，arXiv 版让位给带缩略图的 HF 版
+  const normTitle = (s) => (s || '').toLowerCase().replace(/[^a-z0-9一-鿿]+/g, '');
+  const hfTitles = new Set(hfItems.map((i) => normTitle(i.title)));
+  const arxivItems = filterArxiv(arxivAll, opts).filter((i) => !hfTitles.has(normTitle(i.title)));
+  const extras = [...hfItems, ...arxivItems];
   const seen = new Set(base.map((i) => i.url));
   const merged = [...base, ...extras.filter((i) => !seen.has(i.url))].sort(
     (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()

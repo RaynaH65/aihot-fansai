@@ -45,7 +45,8 @@ export async function fetchHFPapers() {
 
 // 按用户请求的 q / category 过滤，并限制最大注入条数（按 upvotes 排序取 top）
 // 注意：不应用 since 过滤——HF "今日精选" 是 aihot 的"今日"概念，但论文真实发表日期可能是几天前
-export function filterHF(items, { q, category, max = DEFAULT_MAX }) {
+// mode=selected（精选）时只取社区投票最高的 3 篇，避免论文刷屏；全部/论文分类不受此限。
+export function filterHF(items, { q, category, mode, max = DEFAULT_MAX }) {
   let out = items;
   if (category && category !== 'paper') return []; // 显式过滤了别的分类，HF 不出现
   if (q && q.length >= 2) {
@@ -56,8 +57,8 @@ export function filterHF(items, { q, category, max = DEFAULT_MAX }) {
         (i.summary && i.summary.toLowerCase().includes(needle))
     );
   }
-  // category=paper 时给更多（10 条），否则用默认 max
-  const cap = category === 'paper' ? Math.max(max, 10) : max;
+  // category=paper 时给更多（10 条）；精选模式收紧到 3 条；否则用默认 max
+  const cap = category === 'paper' ? Math.max(max, 10) : mode === 'selected' ? 3 : max;
   return out
     .slice()
     .sort((a, b) => (b._upvotes ?? 0) - (a._upvotes ?? 0))

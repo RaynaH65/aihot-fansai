@@ -371,6 +371,34 @@ function DailyView({ data, onOpen }) {
 
 // ============ 社媒声量 ============
 
+const PLATFORM_META = {
+  x: { label: 'X', color: 'var(--color-ink)', name: 'X (Twitter)' },
+  reddit: { label: 'RD', color: '#ff6a2c', name: 'Reddit' },
+  youtube: { label: 'YT', color: '#ff4444', name: 'YouTube' },
+  instagram: { label: 'IG', color: '#e1548b', name: 'Instagram' },
+};
+const PLATFORM_FILTERS = [
+  { key: '', label: '全部平台' },
+  { key: 'x', label: 'X' },
+  { key: 'reddit', label: 'Reddit' },
+  { key: 'youtube', label: 'YouTube' },
+  { key: 'instagram', label: 'Instagram' },
+];
+
+function PlatformBadge({ platform }) {
+  const meta = PLATFORM_META[platform];
+  if (!meta) return null;
+  return (
+    <span
+      title={meta.name}
+      className="flex-none inline-grid place-items-center w-[22px] h-[22px] rounded-md border font-mono text-[9px] font-medium tracking-tight"
+      style={{ color: meta.color, borderColor: 'var(--color-line)' }}
+    >
+      {meta.label}
+    </span>
+  );
+}
+
 function Metric({ icon, value, hot }) {
   if (value == null || value === 0) return null;
   return (
@@ -386,63 +414,110 @@ function MediaGrid({ media }) {
   const items = media.slice(0, 2);
   return (
     <div className={`mt-3 grid gap-1.5 ${items.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-      {items.map((m, i) =>
-        m.type === 'video' && m.url ? (
-          <video
-            key={i}
-            controls
-            preload="none"
-            poster={m.preview || undefined}
-            src={m.url}
-            className="w-full rounded-lg border border-[var(--color-line-2)] bg-black aspect-video object-cover"
-            onClick={(e) => e.stopPropagation()}
-          />
-        ) : (
-          <Thumb key={i} src={m.preview} className={`w-full rounded-lg border border-[var(--color-line-2)] object-cover ${items.length > 1 ? 'aspect-square' : 'max-h-[300px]'}`} />
-        )
-      )}
+      {items.map((m, i) => {
+        if (m.type === 'video' && m.url) {
+          return (
+            <video
+              key={i}
+              controls
+              preload="none"
+              poster={m.preview || undefined}
+              src={m.url}
+              className="w-full rounded-lg border border-[var(--color-line-2)] bg-black aspect-video object-cover"
+              onClick={(e) => e.stopPropagation()}
+            />
+          );
+        }
+        if (m.type === 'link-video' && m.preview) {
+          // YouTube / IG 视频：缩略图 + 播放浮标，点击跳原站
+          return (
+            <a key={i} href={m.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="relative block group/media">
+              <Thumb src={m.preview} className="w-full rounded-lg border border-[var(--color-line-2)] aspect-video object-cover" />
+              <span className="absolute inset-0 grid place-items-center">
+                <span className="w-10 h-10 rounded-full bg-black/55 grid place-items-center group-hover/media:bg-black/75 transition-colors">
+                  <Icon d={I.play} className="w-5 h-5 text-white" strokeWidth={0} />
+                </span>
+              </span>
+            </a>
+          );
+        }
+        return (
+          <Thumb key={i} src={m.preview} className={`w-full rounded-lg border border-[var(--color-line-2)] object-cover ${items.length > 1 ? 'aspect-square' : 'max-h-[280px]'}`} />
+        );
+      })}
     </div>
   );
 }
 
 function SocialCard({ post, showTopic = false, rank = null }) {
   const topic = TOPICS.find((t) => t.key === post.topic);
+  const [showOrig, setShowOrig] = useState(false);
+  const translated = post.textZh && post.textZh !== post.text;
+  const bodyText = translated && !showOrig ? post.textZh : post.text;
   return (
-    <div className="card-hover bg-[var(--color-card)] border border-[var(--color-line)] rounded-xl px-4 py-3.5 flex flex-col">
-      <div className="flex items-center gap-2.5 mb-2.5">
+    <div className="card-hover bg-[var(--color-card)] border border-[var(--color-line)] rounded-xl px-4 pt-4 pb-3 flex flex-col">
+      {/* 头部：作者 + 平台 + 上升 */}
+      <div className="flex items-center gap-2.5 mb-3">
         {rank != null && (
           <span className={`font-mono text-[13px] w-5 text-center flex-none ${rank < 3 ? 'text-[var(--color-signal)]' : 'text-[var(--color-mute-2)]'}`}>
             {rank + 1}
           </span>
         )}
-        <Thumb src={post.authorAvatar} className="w-8 h-8 rounded-full border border-[var(--color-line)] flex-none" />
-        <div className="min-w-0 flex-1 leading-tight">
+        {post.authorAvatar ? (
+          <Thumb src={post.authorAvatar} className="w-9 h-9 rounded-full border border-[var(--color-line)] flex-none object-cover" />
+        ) : (
+          <span className="w-9 h-9 rounded-full border border-[var(--color-line)] flex-none grid place-items-center text-[13px] font-semibold text-[var(--color-mute)] bg-[var(--color-bg-2)]">
+            {(post.authorName || '?').slice(0, 1).toUpperCase()}
+          </span>
+        )}
+        <div className="min-w-0 flex-1 leading-snug">
           <div className="text-[13px] font-semibold text-[var(--color-ink)] truncate">{post.authorName}</div>
-          <div className="tape !tracking-[0.06em] text-[var(--color-mute-2)] truncate !normal-case">
-            @{post.authorHandle}{post.authorFollowers ? ` · ${fmtNum(post.authorFollowers)} 粉` : ''}
+          <div className="text-[11px] text-[var(--color-mute-2)] truncate font-mono">
+            {post.authorHandle ? (post.platform === 'reddit' ? post.authorHandle : `@${post.authorHandle}`) : ''}
+            {post.authorFollowers ? ` · ${fmtNum(post.authorFollowers)}${post.platform === 'youtube' ? ' 订阅' : post.platform === 'reddit' ? ' 成员' : ' 粉'}` : ''}
           </div>
         </div>
         {post.rising >= 50 && (
-          <span className="flex-none inline-flex items-center gap-1 tape text-[var(--color-signal)] bg-[var(--color-signal-soft)] px-2 py-1 rounded">
+          <span className="flex-none inline-flex items-center gap-1 tape text-[var(--color-signal)] bg-[var(--color-signal-soft)] px-1.5 py-1 rounded">
             <Icon d={I.trend} className="w-3 h-3" /> 上升
           </span>
         )}
+        <PlatformBadge platform={post.platform} />
       </div>
-      <p className="text-[13px] leading-relaxed text-[var(--color-ink-2)] clamp-4 whitespace-pre-line flex-1">{post.text}</p>
+
+      {/* 正文（默认展示中文译文） */}
+      <p className="text-[13.5px] leading-relaxed text-[var(--color-ink-2)] clamp-4 whitespace-pre-line flex-1">
+        {bodyText}
+      </p>
+      {translated && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowOrig((v) => !v);
+          }}
+          className="self-start mt-1.5 tape text-[var(--color-mute-2)] hover:text-[var(--color-accent)] transition-colors"
+        >
+          {showOrig ? '看译文' : '看原文'}
+        </button>
+      )}
+
       <MediaGrid media={post.media} />
-      <div className="mt-3 flex items-center gap-3.5 text-[var(--color-mute)]">
+
+      {/* 底部：指标 + 专题 + 时间 */}
+      <div className="mt-3 pt-2.5 border-t border-[var(--color-line-2)] flex items-center gap-3.5 text-[var(--color-mute)]">
         <Metric icon={I.heart} value={post.likes} hot={post.likes >= 1000} />
         <Metric icon={I.repost} value={post.reposts} />
         <Metric icon={I.reply} value={post.replies} />
         <Metric icon={I.eye} value={post.views} />
-        <span className="ml-auto flex items-center gap-2">
-          {showTopic && topic && <span className="tape text-[var(--color-accent)]">{topic.label}</span>}
+        <span className="ml-auto flex items-center gap-2.5 min-w-0">
+          {showTopic && topic && <span className="tape text-[var(--color-accent)] truncate">{topic.label}</span>}
           <a
             href={post.url}
             target="_blank"
             rel="noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="tape text-[var(--color-mute-2)] hover:text-[var(--color-accent)] transition-colors inline-flex items-center gap-1"
+            className="tape text-[var(--color-mute-2)] hover:text-[var(--color-accent)] transition-colors inline-flex items-center gap-1 flex-none"
           >
             {relTime(post.publishedAt)} <Icon d={I.ext} className="w-3 h-3" />
           </a>
@@ -530,13 +605,15 @@ function SocialBoard() {
   const [posts, setPosts] = useState(null);
   const [sort, setSort] = useState('heat');
   const [topicFilter, setTopicFilter] = useState('all');
+  const [platform, setPlatform] = useState('');
   const [status, setStatus] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     setPosts(null);
     const t = topicFilter === 'all' ? '' : `&topic=${topicFilter}`;
-    fetch(`/api/social?sort=${sort}&take=40${t}`)
+    const p = platform ? `&platform=${platform}` : '';
+    fetch(`/api/social?sort=${sort}&take=40${t}${p}`)
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return;
@@ -545,25 +622,38 @@ function SocialBoard() {
       })
       .catch(() => !cancelled && setPosts([]));
     return () => { cancelled = true; };
-  }, [sort, topicFilter]);
+  }, [sort, topicFilter, platform]);
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2.5 mb-5">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 mb-2.5">
         <SortToggle sort={sort} onChange={setSort} />
         <div className="flex items-center gap-1 overflow-x-auto no-scrollbar -mx-1 px-1">
-          {[{ key: 'all', label: '全部' }, ...TOPICS].map((t) => (
+          {PLATFORM_FILTERS.map((p) => (
             <button
-              key={t.key}
-              onClick={() => setTopicFilter(t.key)}
-              className={`flex-none px-2.5 py-1 rounded-md text-[12px] transition-colors ${
-                topicFilter === t.key ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'text-[var(--color-mute)] hover:text-[var(--color-ink-2)]'
+              key={p.key || 'all'}
+              onClick={() => setPlatform(p.key)}
+              className={`flex-none px-2.5 py-1 rounded-md text-[12px] font-mono transition-colors ${
+                platform === p.key ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'text-[var(--color-mute)] hover:text-[var(--color-ink-2)]'
               }`}
             >
-              {t.label}
+              {p.label}
             </button>
           ))}
         </div>
+      </div>
+      <div className="flex items-center gap-1 overflow-x-auto no-scrollbar -mx-1 px-1 mb-5">
+        {[{ key: 'all', label: '全部专题' }, ...TOPICS].map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTopicFilter(t.key)}
+            className={`flex-none px-2.5 py-1 rounded-md text-[12px] transition-colors ${
+              topicFilter === t.key ? 'bg-[var(--color-accent-soft)] text-[var(--color-accent)]' : 'text-[var(--color-mute)] hover:text-[var(--color-ink-2)]'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
       {!posts ? (
         <Loading text="扫描全网声量" />

@@ -90,6 +90,7 @@ http
         if (!dbEnabled()) return sendJson(res, 200, { enabled: false, posts: [] });
         const posts = await querySocialPosts({
           topic: params.get('topic') || undefined,
+          platform: params.get('platform') || undefined,
           q: (params.get('q') || '').trim() || undefined,
           sort: params.get('sort') === 'rising' ? 'rising' : 'heat',
           days: Math.min(parseInt(params.get('days') || '7', 10) || 7, 30),
@@ -112,9 +113,19 @@ http
         if (!dbEnabled()) return sendJson(res, 200, { ok: false, reason: 'DATABASE_URL 未配置' });
         if (!hasApifyToken()) return sendJson(res, 200, { ok: false, reason: 'APIFY_TOKEN 未配置' });
         const days = Math.min(parseInt(params.get('days') || '7', 10) || 7, 30);
-        const maxItems = Math.min(parseInt(params.get('max') || '240', 10) || 240, 1000);
+        const maxItems = Math.min(parseInt(params.get('max') || '400', 10) || 400, 1200);
         const result = await runSocialScrape({ days, maxItems });
-        return sendJson(res, result.ok ? 200 : 502, result);
+        // 翻译 + 审核补处理（与线上 cron 行为一致）
+        const { getUnprocessedSocial, saveSocialModeration } = await import('../web/api/_db.js');
+        const { translateAndModerate } = await import('../web/api/_moderation.js');
+        const pending = await getUnprocessedSocial(90);
+        let moderation = null;
+        if (pending.length) {
+          const map = await translateAndModerate(pending);
+          const saved = await saveSocialModeration(map);
+          moderation = { processed: saved, blocked: Object.values(map).filter((m) => m.blocked).length };
+        }
+        return sendJson(res, result.ok ? 200 : 502, { ...result, moderation });
       }
 
       // 1) 搜索：查自有历史库
