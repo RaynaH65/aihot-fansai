@@ -581,7 +581,7 @@ function SocialStrip({ topicKey }) {
       <div className="flex items-center gap-3 mb-3.5">
         <Icon d={I.flame} className="w-4 h-4 text-[var(--color-signal)]" />
         <h2 className="text-[15px] masthead font-bold">社媒声量</h2>
-        <span className="tape text-[var(--color-mute-2)]">X · 近 7 天</span>
+        <span className="tape text-[var(--color-mute-2)]">多平台 · 近 7 天</span>
         <span className="flex-1" />
         <SortToggle sort={sort} onChange={setSort} />
       </div>
@@ -914,7 +914,7 @@ export default function App() {
     nav.view === 'social' ? 'SOCIAL RADAR' : activeTopic ? 'FOCUS TOPIC' : currentMode?.en;
   const headerSub =
     nav.view === 'social'
-      ? '重点专题在 X 上的高热度 / 高增速内容'
+      ? '重点专题在 X · Reddit · YouTube · Instagram 上的高热度 / 高增速内容'
       : activeTopic
         ? `跨全部历史聚合「${activeTopic.label}」相关情报与声量`
         : currentMode?.subtitle;
