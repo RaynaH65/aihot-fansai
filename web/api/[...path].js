@@ -47,16 +47,14 @@ export default async function handler(req, res) {
   const shouldMerge = isItems && !hasCursor && (!categoryParam || categoryParam === 'paper');
 
   try {
-    // 0.a) 今日热点（聚类）：/api/social/stories
-    if (subPath === 'social/stories') {
+    // 0) 社媒声量：/api/social?topic=&platform=&sort=heat|rising&days=&take= 或 ?q=Suno
+    //    今日热点（聚类）：/api/social?view=stories（注意：Vercel 对多段路径进不了 catch-all，用查询参数）
+    if (subPath === 'social' || subPath === 'social/stories') {
       res.setHeader('content-type', 'application/json; charset=utf-8');
-      if (!dbEnabled()) return res.status(200).send(JSON.stringify({ stories: [], updatedAt: null }));
-      return res.status(200).send(JSON.stringify(await readStories()));
-    }
-
-    // 0) 社媒声量：/api/social?topic=t-music&platform=x|reddit|youtube|instagram&sort=heat|rising&days=7&take=30 或 ?q=Suno
-    if (subPath === 'social') {
-      res.setHeader('content-type', 'application/json; charset=utf-8');
+      if (params.get('view') === 'stories' || subPath === 'social/stories') {
+        if (!dbEnabled()) return res.status(200).send(JSON.stringify({ stories: [], updatedAt: null }));
+        return res.status(200).send(JSON.stringify(await readStories()));
+      }
       if (!dbEnabled()) return res.status(200).send(JSON.stringify({ enabled: false, posts: [] }));
       const posts = await querySocialPosts({
         topic: params.get('topic') || undefined,

@@ -635,7 +635,7 @@ function StoriesSection() {
   const [open, setOpen] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/social/stories')
+    fetch('/api/social?view=stories')
       .then((r) => r.json())
       .then((d) => !cancelled && setData(d))
       .catch(() => !cancelled && setData({ stories: [] }));

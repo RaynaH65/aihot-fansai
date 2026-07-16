@@ -86,7 +86,7 @@ http
 
     try {
       // 0.a) 今日热点（聚类）
-      if (subPath === 'social/stories') {
+      if (subPath === 'social/stories' || (subPath === 'social' && params.get('view') === 'stories')) {
         if (!dbEnabled()) return sendJson(res, 200, { stories: [], updatedAt: null });
         const { readStories } = await import('../web/api/_stories.js');
         return sendJson(res, 200, await readStories());
