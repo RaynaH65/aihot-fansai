@@ -5,7 +5,11 @@ const BASE = (process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.chat').repla
 const API_URL = `${BASE}/v1/text/chatcompletion_v2`;
 const MODEL = process.env.MINIMAX_MODEL || 'MiniMax-Text-01';
 
-export const hasMinimaxKey = () => !!process.env.MINIMAX_API_KEY;
+// 兼容两种变量名：MINIMAX_API_KEY（标准）与 MinimaxAPIKey（Vercel 上 2026-06-27 手工添加的旧名，
+// Sensitive 变量无法改名，索性代码里都认）
+const minimaxKey = () => process.env.MINIMAX_API_KEY || process.env.MinimaxAPIKey || '';
+
+export const hasMinimaxKey = () => !!minimaxKey();
 
 // 发一轮对话，返回纯文本（失败返回 null，不抛错）
 export async function minimaxChat(prompt, { maxTokens = 4000 } = {}) {
@@ -15,7 +19,7 @@ export async function minimaxChat(prompt, { maxTokens = 4000 } = {}) {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        Authorization: `Bearer ${process.env.MINIMAX_API_KEY}`,
+        Authorization: `Bearer ${minimaxKey()}`,
       },
       body: JSON.stringify({
         model: MODEL,

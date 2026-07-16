@@ -162,6 +162,6 @@ http
     console.log(`  GET /api/items   (含 HF Papers + arXiv RSS + 富化)`);
     console.log(`  GET /api/social  (社媒声量) · /api/cron/ingest · /api/cron/social (手动触发)`);
     console.log(`  DATABASE_URL    ${dbEnabled() ? '已配置 ✓（囤货+历史搜索开启）' : '未配置（无历史库，行为同以前）'}`);
-    console.log(`  MINIMAX_API_KEY ${process.env.MINIMAX_API_KEY ? '已配置 ✓（翻译+理由+亮点开启）' : '未配置（不翻译、不生成理由/亮点）'}`);
+    console.log(`  MINIMAX_API_KEY ${process.env.MINIMAX_API_KEY || process.env.MinimaxAPIKey ? '已配置 ✓（翻译+理由+亮点开启）' : '未配置（不翻译、不生成理由/亮点）'}`);
     console.log(`  APIFY_TOKEN     ${process.env.APIFY_TOKEN ? '已配置 ✓（社媒抓取可用）' : '未配置（社媒抓取不可用）'}`);
   });

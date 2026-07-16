@@ -4,6 +4,7 @@
 import { buildMergedItems } from '../_feed.js';
 import { dbEnabled, dbVar, getBackfillItems } from '../_db.js';
 import { applyStoredEnrichment, enrichMissingAndPersist } from '../_enrich.js';
+import { hasMinimaxKey } from '../_minimax.js';
 
 export const config = { maxDuration: 300 };
 
@@ -45,7 +46,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       dbVar: dbVar(),
-      hasMinimaxKey: !!process.env.MINIMAX_API_KEY, // 诊断：函数能否读到 key（不暴露 key 本身）
+      hasMinimaxKey: hasMinimaxKey(), // 诊断：函数能否读到 key（不暴露 key 本身）
       fetched: items.length,
       ...stats,
       backfill,
