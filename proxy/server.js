@@ -115,15 +115,17 @@ http
         const days = Math.min(parseInt(params.get('days') || '7', 10) || 7, 30);
         const maxItems = Math.min(parseInt(params.get('max') || '400', 10) || 400, 1200);
         const result = await runSocialScrape({ days, maxItems });
-        // 翻译 + 审核补处理（与线上 cron 行为一致）
+        // 翻译 + 审核补处理（与线上 cron 行为一致：小批量循环、逐批落库）
         const { getUnprocessedSocial, saveSocialModeration } = await import('../web/api/_db.js');
         const { translateAndModerate } = await import('../web/api/_moderation.js');
-        const pending = await getUnprocessedSocial(90);
-        let moderation = null;
-        if (pending.length) {
+        const moderation = { processed: 0, blocked: 0 };
+        for (;;) {
+          const pending = await getUnprocessedSocial(15);
+          if (!pending.length) break;
           const map = await translateAndModerate(pending);
-          const saved = await saveSocialModeration(map);
-          moderation = { processed: saved, blocked: Object.values(map).filter((m) => m.blocked).length };
+          if (!Object.keys(map).length) break;
+          moderation.processed += await saveSocialModeration(map);
+          moderation.blocked += Object.values(map).filter((m) => m.blocked).length;
         }
         return sendJson(res, result.ok ? 200 : 502, { ...result, moderation });
       }

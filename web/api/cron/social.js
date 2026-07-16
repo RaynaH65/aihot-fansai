@@ -26,6 +26,7 @@ export default async function handler(req, res) {
     const maxItems = Math.min(parseInt(u.searchParams.get('max') || '400', 10) || 400, 1200);
     const onlyModerate = u.searchParams.get('moderate') === '1'; // 只跑翻译+审核（不抓新数据）
 
+    const started = Date.now();
     let scrape = null;
     if (!onlyModerate) {
       if (!hasApifyToken()) {
@@ -34,18 +35,21 @@ export default async function handler(req, res) {
       scrape = await runSocialScrape({ days, maxItems });
     }
 
-    // 翻译 + 审核：处理库里 text_zh 为 null 的（含刚抓的和历史存量）
+    // 翻译 + 审核：小批量循环、逐批落库（函数被掐掉也不丢已完成进度），剩余的下轮继续
     let moderation = null;
     if (hasMinimaxKey()) {
-      const pending = await getUnprocessedSocial(90);
-      if (pending.length) {
+      const budgetMs = (onlyModerate ? 250 : 60) * 1000;
+      moderation = { processed: 0, blocked: 0, rounds: 0 };
+      while (Date.now() - started < budgetMs) {
+        const pending = await getUnprocessedSocial(15);
+        if (!pending.length) break;
         const map = await translateAndModerate(pending);
-        const saved = await saveSocialModeration(map);
-        const blockedCount = Object.values(map).filter((m) => m.blocked).length;
-        moderation = { processed: saved, blocked: blockedCount, pendingBefore: pending.length };
-      } else {
-        moderation = { processed: 0, blocked: 0, pendingBefore: 0 };
+        if (!Object.keys(map).length) break; // MiniMax 异常时避免原地死循环
+        moderation.processed += await saveSocialModeration(map);
+        moderation.blocked += Object.values(map).filter((m) => m.blocked).length;
+        moderation.rounds++;
       }
+      moderation.remaining = (await getUnprocessedSocial(1)).length > 0;
     }
 
     return res.status(200).json({ ok: true, scrape, moderation });
