@@ -83,6 +83,8 @@ async function scrapeX(topic, { days, perTopic }) {
     if (!t || t.noResults || !t.id || !t.url) continue;
     if (t.possiblySensitive || t.author?.possiblySensitive) continue; // X 官方敏感标记
     const text = (t.fullText || t.text || '').slice(0, 2000);
+    // X 搜索会命中作者昵称（比如用户名叫 SORA 的生活帖混进 AI 视频）——正文必须真含专题词
+    if (!matchesTopic(topic, text)) continue;
     if (keywordBlocked(text, t.author?.name, t.author?.userName)) continue;
     const publishedAt = t.createdAt ? new Date(t.createdAt) : null;
     if (!publishedAt || isNaN(publishedAt.getTime())) continue;

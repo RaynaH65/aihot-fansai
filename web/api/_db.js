@@ -2,6 +2,7 @@
 // 没配 DATABASE_URL 时全部退化为 no-op，站点行为跟以前完全一样。
 import { neon } from '@neondatabase/serverless';
 import { keywordBlocked } from './_moderation.js';
+import { matchesTopic, topicByKey } from './_topics.js';
 
 // Vercel 的 Neon / Postgres 集成可能用不同的变量名注入连接串，挨个认一遍。
 const CANDIDATES = [
@@ -315,9 +316,15 @@ export async function querySocialPosts({ topic, platform, q, sort = 'heat', days
   }
 
   const now = Date.now();
-  const visible = rows.filter(
-    (r) => !keywordBlocked(r.text_content, r.text_zh, r.author_name, r.author_handle)
-  );
+  const visible = rows.filter((r) => {
+    if (keywordBlocked(r.text_content, r.text_zh, r.author_name, r.author_handle)) return false;
+    // X 的存量数据补一道相关性过滤（作者名误命中问题）；IG 靠 hashtag 定位不查正文，Reddit/YT 抓取时已过滤
+    if (r.platform === 'x') {
+      const t = topicByKey(r.topic);
+      if (t && !matchesTopic(t, `${r.text_content || ''} ${r.text_zh || ''}`)) return false;
+    }
+    return true;
+  });
   const posts = visible.map((r) => {
     const likes = Number(r.likes) || 0;
     const reposts = Number(r.reposts) || 0;
