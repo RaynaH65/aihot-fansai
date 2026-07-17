@@ -793,7 +793,8 @@ function DetailView({ item, onBack }) {
   }, [item]);
 
   return (
-    <div className="anim-rise">
+    // 列表页流式撑满，但长文阅读保留 1080px 上限（一行 300 字符没法读）
+    <div className="anim-rise max-w-[1080px]">
       <button
         type="button"
         onClick={onBack}
@@ -1129,7 +1130,7 @@ export default function App() {
 
       {/* ---- 主区 ---- */}
       <main className="flex-1 min-w-0 pt-[52px] lg:pt-0">
-        <div className="max-w-[880px] mx-auto px-4 sm:px-8 py-7 sm:py-9">
+        <div className="px-4 sm:px-8 xl:px-12 py-7 sm:py-9">
           {selected ? (
             <DetailView item={selected} onBack={closeDetail} />
           ) : (
