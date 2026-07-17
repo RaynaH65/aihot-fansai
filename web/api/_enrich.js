@@ -51,9 +51,10 @@ export async function enrichMissingAndPersist(items, enrichMap = {}, { light = f
     const enrich = {}; // url → patch
 
     // 1) 翻译：库里没有 title_zh 且看起来是英文的
+    // light 配额给到 5 批（60 条）——覆盖一整屏 take=50，一次访问就能把当前视图补齐
     const needT = items.filter((it) => !enrichMap[it.url]?.title_zh && needsTranslation(it));
     if (needT.length && hasMinimaxKey()) {
-      const tMap = await translateItems(needT, { maxBatches: light ? 2 : Infinity });
+      const tMap = await translateItems(needT, { maxBatches: light ? 5 : Infinity });
       for (const [url, t] of Object.entries(tMap)) {
         enrich[url] = { ...(enrich[url] || {}), title_zh: t.title, summary_zh: t.summary };
         stats.translated++;
@@ -67,7 +68,7 @@ export async function enrichMissingAndPersist(items, enrichMap = {}, { light = f
     });
     if (needI.length && hasMinimaxKey()) {
       // 用中文版内容喂给模型（刚翻好的优先）
-      const forModel = needI.slice(0, light ? 15 : Infinity).map((it) => {
+      const forModel = needI.slice(0, light ? 30 : Infinity).map((it) => {
         const t = enrich[it.url];
         const e = enrichMap[it.url] || {};
         return {
