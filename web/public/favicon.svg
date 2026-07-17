@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- FansAI 情报局 favicon：品牌靛蓝 + 几何 F（圆头笔画，呼应 logo 的圆角端点） -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4a57c8"/>
+      <stop offset="1" stop-color="#333d8f"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <g stroke="#ffffff" stroke-width="7.5" stroke-linecap="round" fill="none">
+    <path d="M24 46.5 V18.5"/>
+    <path d="M24 18.5 H42.5"/>
+    <path d="M24 32.5 H38"/>
+  </g>
+</svg>
