@@ -25,9 +25,8 @@ try {
 // 业务模块必须在 .env 加载之后再 import（_db.js 在模块加载时捕获 DATABASE_URL）
 const { buildMergedItems } = await import('../web/api/_feed.js');
 const { dbEnabled, searchItems, querySocialPosts, socialStatus } = await import('../web/api/_db.js');
-const { applyStoredEnrichment, enrichInBackground, enrichMissingAndPersist } = await import(
-  '../web/api/_enrich.js'
-);
+const { applyStoredEnrichment, enrichInBackground, enrichMissingAndPersist, hideUntranslatedFreshPapers } =
+  await import('../web/api/_enrich.js');
 const { runSocialScrape, hasApifyToken } = await import('../web/api/_social.js');
 
 const PORT = process.env.PORT || 8787;
@@ -162,6 +161,7 @@ http
           items = enriched;
           enrichInBackground(rawItems, enrichMap);
         }
+        items = hideUntranslatedFreshPapers(items);
         parsed.items = items;
         parsed.count = items.length;
         return sendJson(res, status, parsed, {

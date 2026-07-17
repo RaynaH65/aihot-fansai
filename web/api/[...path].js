@@ -7,7 +7,7 @@
 import { buildMergedItems } from './_feed.js';
 import { dbEnabled, searchItems, querySocialPosts, socialStatus } from './_db.js';
 import { readStories } from './_stories.js';
-import { applyStoredEnrichment, enrichInBackground } from './_enrich.js';
+import { applyStoredEnrichment, enrichInBackground, hideUntranslatedFreshPapers } from './_enrich.js';
 
 const UPSTREAM = 'https://aihot.virxact.com';
 const UA =
@@ -90,10 +90,12 @@ export default async function handler(req, res) {
       if (dbEnabled()) {
         const { items: enriched, enrichMap } = await applyStoredEnrichment(rawItems);
         items = enriched;
-        // 响应后台：囤货 + 为缺翻译/理由/亮点/配图的条目补齐（幂等、限量）
+        // 响应后台：囤货 + 为缺翻译/理由/亮点/配图的条目补齐（幂等、限量）。
+        // 注意传 rawItems（含被下面隐藏的新论文），隐藏中的条目照样被翻译，翻完自动上架。
         enrichInBackground(rawItems, enrichMap);
       }
 
+      items = hideUntranslatedFreshPapers(items);
       parsed.items = items;
       parsed.count = items.length;
 

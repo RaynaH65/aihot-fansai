@@ -115,6 +115,19 @@ export async function enrichMissingAndPersist(items, enrichMap = {}, { light = f
   }
 }
 
+// 论文「翻译好才上架」：中午新更新的 arXiv/HF 论文先不进信息流，等后台翻译完成再出现
+// （enrichInBackground 收到的是含隐藏条目的全量，翻完下次请求自动上架；9 点 cron 兜底）。
+// 超过 24h 仍没翻译的照常展示，防止 MiniMax 挂掉时论文永久消失。
+export function hideUntranslatedFreshPapers(items) {
+  if (!hasMinimaxKey()) return items; // 没配翻译 key（如本地开发）时永远翻不了，直接原样展示
+  const now = Date.now();
+  return items.filter((it) => {
+    if (it.category !== 'paper' || !needsTranslation(it)) return true;
+    const ageH = (now - new Date(it.publishedAt).getTime()) / 3600_000;
+    return !(ageH >= 0 && ageH < 24);
+  });
+}
+
 // 请求路径的后台富化：优先用 Vercel 的 waitUntil 保证响应后继续执行；
 // 本地 node 进程常驻，直接 fire-and-forget 即可。
 export function enrichInBackground(items, enrichMap) {
